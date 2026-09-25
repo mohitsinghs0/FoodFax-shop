@@ -1,0 +1,17 @@
+{
+  "short_name": "FoodFax Shop",
+  "name": "FoodFax Shop Owner App",
+  "icons": [
+    {
+      "src": "https://api.iconify.design/lucide:utensils-crossed.svg?color=%23f97316",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#090d16",
+  "theme_color": "#f97316",
+  "display": "standalone",
+  "orientation": "portrait"
+}
