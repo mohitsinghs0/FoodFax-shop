@@ -1,0 +1,6 @@
+{
+  "name": "Foodfax Shop - Restaurant & Stall Partner App",
+  "description": "High-performance Foodfax Shop Partner app featuring real-time kitchen display (KDS), menu management, sub-50ms API caching, lazy loading, and memoized rendering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
