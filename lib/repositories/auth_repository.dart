@@ -11,7 +11,7 @@ class AuthRepository {
   User? get currentUser => _authService.currentUser;
   bool get isAuthenticated => _authService.isAuthenticated;
 
-  Future<AuthResponse> registerOwnerWithPhone({
+  Future<OwnerProfile> registerOwnerWithPhone({
     required String phone,
     required String password,
     required String fullName,
@@ -23,7 +23,7 @@ class AuthRepository {
     );
   }
 
-  Future<AuthResponse> loginWithPhone({
+  Future<OwnerProfile?> loginWithPhone({
     required String phone,
     required String password,
   }) {
@@ -32,7 +32,7 @@ class AuthRepository {
 
   Future<void> sendPhoneOtp(String phone) => _authService.sendPhoneOtp(phone);
 
-  Future<AuthResponse> verifyPhoneOtp({
+  Future<OwnerProfile?> verifyPhoneOtp({
     required String phone,
     required String token,
   }) =>
@@ -40,7 +40,8 @@ class AuthRepository {
 
   Future<void> signOut() => _authService.signOut();
 
-  Future<OwnerProfile?> fetchOwnerProfile(String userId) => _authService.fetchOwnerProfile(userId);
+  Future<OwnerProfile?> fetchOwnerProfile(String userId, {String? phone}) =>
+      _authService.fetchOwnerProfile(userId, phone: phone);
 
   Future<void> refreshToken() => _authService.refreshSession();
 }

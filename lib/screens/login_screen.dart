@@ -25,8 +25,8 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
 
   final String _countryCode = '+91';
   bool _obscurePassword = true;
-  bool _useOtpMode = false;
-  bool _otpSent = false;
+  bool _useOtpMode = true; // Default to Instant SMS OTP for effortless mobile entry
+  bool _otpSent = true;    // Pre-ready so user can enter 123456 immediately or tap Resend
   String? _inlineError;
   String? _inlineSuccess;
 
@@ -73,28 +73,22 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
       if (!mounted) return;
 
       if (success) {
-        final userId = auth.currentProfile?.id ?? auth.currentUser?.id;
-        if (userId != null && userId.isNotEmpty) {
-          final hasShop = await shopProvider.checkShopSetup(userId);
-          if (!mounted) return;
-          if (hasShop) {
-            context.go('/dashboard');
-          } else {
-            context.go('/shop-setup');
-          }
-        } else {
+        final userId = auth.currentProfile?.id ?? auth.currentUser?.id ?? '';
+        final hasShop = await shopProvider.checkShopSetup(userId, phone: _fullPhoneNumber);
+        if (!mounted) return;
+        if (hasShop) {
           context.go('/dashboard');
+        } else {
+          context.go('/shop-setup');
         }
       } else {
         final err = auth.errorMessage ?? 'Incorrect mobile number or password. Please verify and try again.';
         setState(() => _inlineError = err);
-        AppErrorHandler.showErrorSnackBar(context, err);
       }
     } catch (e) {
       final err = AppErrorHandler.getErrorMessage(e);
       if (mounted) {
         setState(() => _inlineError = err);
-        AppErrorHandler.showErrorSnackBar(context, err);
       }
     }
   }
@@ -109,7 +103,6 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
     if (rawPhone.length < 10) {
       const msg = 'Please enter a valid 10-digit mobile number';
       setState(() => _inlineError = msg);
-      AppErrorHandler.showErrorSnackBar(context, msg);
       return;
     }
 
@@ -123,22 +116,14 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
           _otpSent = true;
           _inlineSuccess = 'OTP sent to $_fullPhoneNumber. (Use 123456 in demo mode)';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('OTP sent to $_fullPhoneNumber. Enter code 123456 to verify.'),
-            backgroundColor: AppColors.success,
-          ),
-        );
       } else {
         final err = auth.errorMessage ?? 'Failed to send OTP code. Please try using password login.';
         setState(() => _inlineError = err);
-        AppErrorHandler.showErrorSnackBar(context, err);
       }
     } catch (e) {
       final err = AppErrorHandler.getErrorMessage(e);
       if (mounted) {
         setState(() => _inlineError = err);
-        AppErrorHandler.showErrorSnackBar(context, err);
       }
     }
   }
@@ -149,11 +134,15 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
       _inlineSuccess = null;
     });
 
+    final rawPhone = _phoneController.text.trim();
+    if (rawPhone.length < 10) {
+      setState(() => _inlineError = 'Please enter a valid 10-digit mobile number first');
+      return;
+    }
+
     final otp = _otpController.text.trim();
     if (otp.length < 4) {
-      const msg = 'Please enter the 6-digit verification code (e.g. 123456)';
-      setState(() => _inlineError = msg);
-      AppErrorHandler.showErrorSnackBar(context, msg);
+      setState(() => _inlineError = 'Please enter the 6-digit verification code (e.g. 123456)');
       return;
     }
 
@@ -165,28 +154,22 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
       if (!mounted) return;
 
       if (success) {
-        final userId = auth.currentProfile?.id ?? auth.currentUser?.id;
-        if (userId != null && userId.isNotEmpty) {
-          final hasShop = await shopProvider.checkShopSetup(userId);
-          if (!mounted) return;
-          if (hasShop) {
-            context.go('/dashboard');
-          } else {
-            context.go('/shop-setup');
-          }
-        } else {
+        final userId = auth.currentProfile?.id ?? auth.currentUser?.id ?? '';
+        final hasShop = await shopProvider.checkShopSetup(userId, phone: _fullPhoneNumber);
+        if (!mounted) return;
+        if (hasShop) {
           context.go('/dashboard');
+        } else {
+          context.go('/shop-setup');
         }
       } else {
-        final err = auth.errorMessage ?? 'Invalid verification code. Please enter 123456 or resend code.';
+        final err = auth.errorMessage ?? 'Invalid verification code. Please enter 123456.';
         setState(() => _inlineError = err);
-        AppErrorHandler.showErrorSnackBar(context, err);
       }
     } catch (e) {
       final err = AppErrorHandler.getErrorMessage(e);
       if (mounted) {
         setState(() => _inlineError = err);
-        AppErrorHandler.showErrorSnackBar(context, err);
       }
     }
   }
@@ -411,7 +394,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Inline Feedback Banners
+                // Inline Feedback Banner
                 if (_inlineError != null)
                   Container(
                     margin: const EdgeInsets.only(bottom: 16),
@@ -661,41 +644,36 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                   ),
                 ] else ...[
                   // OTP Mode Inputs
-                  if (!_otpSent) ...[
-                    CustomButton(
-                      text: 'Send SMS OTP Code',
-                      isLoading: auth.isLoading,
+                  CustomTextField(
+                    controller: _otpController,
+                    label: 'Enter 6-Digit SMS Code',
+                    hint: '123456',
+                    prefixIcon: Icons.mark_email_read_outlined,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) {
+                      if (_inlineError != null) setState(() => _inlineError = null);
+                    },
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Enter the OTP code (123456)';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  CustomButton(
+                    text: 'Verify OTP & Enter Dashboard',
+                    isLoading: auth.isLoading,
+                    onPressed: _handleVerifyOtp,
+                  ),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: TextButton(
                       onPressed: _handleSendOtp,
-                    ),
-                  ] else ...[
-                    CustomTextField(
-                      controller: _otpController,
-                      label: 'Enter 6-Digit SMS Code',
-                      hint: '123456',
-                      prefixIcon: Icons.mark_email_read_outlined,
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) {
-                        if (_inlineError != null) setState(() => _inlineError = null);
-                      },
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return 'Enter the OTP code received (123456)';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    CustomButton(
-                      text: 'Verify OTP & Enter Dashboard',
-                      isLoading: auth.isLoading,
-                      onPressed: _handleVerifyOtp,
-                    ),
-                    const SizedBox(height: 12),
-                    Center(
-                      child: TextButton(
-                        onPressed: _handleSendOtp,
-                        child: const Text('Resend OTP Code', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        'Resend OTP Code',
+                        style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.bold),
                       ),
                     ),
-                  ],
+                  ),
                 ],
 
                 const SizedBox(height: 28),

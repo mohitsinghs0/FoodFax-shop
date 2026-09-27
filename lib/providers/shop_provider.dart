@@ -19,12 +19,12 @@ class ShopProvider extends ChangeNotifier {
   bool get hasCompletedShopSetup => _currentShop != null && _currentShop!.name.isNotEmpty;
 
   /// Check owner shop setup
-  Future<bool> checkShopSetup(String ownerId) async {
+  Future<bool> checkShopSetup(String ownerId, {String? phone}) async {
     _isCheckingSetup = true;
     notifyListeners();
 
     try {
-      _currentShop = await _repository.fetchShopByOwner(ownerId);
+      _currentShop = await _repository.fetchShopByOwner(ownerId, phone: phone);
       _isCheckingSetup = false;
       notifyListeners();
       return hasCompletedShopSetup;
@@ -36,7 +36,7 @@ class ShopProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> fetchShop(String ownerId) => checkShopSetup(ownerId);
+  Future<bool> fetchShop(String ownerId, {String? phone}) => checkShopSetup(ownerId, phone: phone);
 
   /// Save or create shop
   Future<bool> saveShop(Shop shop) async {
@@ -86,7 +86,11 @@ class ShopProvider extends ChangeNotifier {
     try {
       await _repository.toggleRushMode(_currentShop!.id, isRush, extraMinutes: extraMinutes);
     } catch (e) {
-      _currentShop = _currentShop!.copyWith(isRushMode: !isRush);
+      // Revert if error
+      _currentShop = _currentShop!.copyWith(
+        isRushMode: !isRush,
+        rushExtraMinutes: _currentShop!.rushExtraMinutes,
+      );
       notifyListeners();
     }
   }

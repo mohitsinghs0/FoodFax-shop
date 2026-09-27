@@ -91,9 +91,9 @@ class OwnerAuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadProfile(String userId) async {
+  Future<void> _loadProfile(String userId, {String? phone}) async {
     try {
-      final profile = await _repository.fetchOwnerProfile(userId);
+      final profile = await _repository.fetchOwnerProfile(userId, phone: phone);
       if (profile != null) {
         _currentProfile = profile;
         _saveProfileLocally(profile);
@@ -103,7 +103,7 @@ class OwnerAuthProvider extends ChangeNotifier {
           id: u.id,
           email: u.email ?? '',
           fullName: u.userMetadata?['full_name'] as String? ?? 'Restaurant Owner',
-          phone: u.userMetadata?['phone'] as String?,
+          phone: u.userMetadata?['phone'] as String? ?? phone,
           role: 'owner',
         );
         _saveProfileLocally(_currentProfile!);
@@ -133,24 +133,12 @@ class OwnerAuthProvider extends ChangeNotifier {
 
     try {
       debugPrint('[OwnerAuthProvider] loginWithPhone started: $phone');
-      final res = await _repository.loginWithPhone(phone: phone, password: password);
-      final userId = res.user?.id ?? _repository.currentUser?.id;
+      final profile = await _repository.loginWithPhone(phone: phone, password: password);
 
-      if (userId != null && userId.isNotEmpty) {
-        debugPrint('[OwnerAuthProvider] Login succeeded for user: $userId');
-        await _loadProfile(userId);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(AppConstants.prefHasOnboarded, true);
-        _isLoading = false;
-        _errorMessage = null;
-        _status = AuthStatus.authenticated;
-        notifyListeners();
-        return true;
-      }
-
-      // Check if session is already active
-      if (_repository.isAuthenticated && _repository.currentUser != null) {
-        await _loadProfile(_repository.currentUser!.id);
+      if (profile != null) {
+        debugPrint('[OwnerAuthProvider] Login succeeded for user: ${profile.id} (${profile.fullName})');
+        _currentProfile = profile;
+        _saveProfileLocally(profile);
         _isLoading = false;
         _errorMessage = null;
         _status = AuthStatus.authenticated;
@@ -187,7 +175,6 @@ class OwnerAuthProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('[OwnerAuthProvider] sendPhoneOtp notice (demo mode active): $e');
-      // If SMS gateway fails or is unconfigured on project, seamless demo code 123456 is allowed
       _isLoading = false;
       notifyListeners();
       return true;
@@ -203,14 +190,12 @@ class OwnerAuthProvider extends ChangeNotifier {
 
     try {
       debugPrint('[OwnerAuthProvider] verifyPhoneOtp started: phone=$phone, otp=$otp');
-      final res = await _repository.verifyPhoneOtp(phone: phone, token: otp);
-      final userId = res.user?.id ?? _repository.currentUser?.id;
+      final profile = await _repository.verifyPhoneOtp(phone: phone, token: otp);
 
-      if (userId != null && userId.isNotEmpty) {
-        debugPrint('[OwnerAuthProvider] OTP verification succeeded for user: $userId');
-        await _loadProfile(userId);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(AppConstants.prefHasOnboarded, true);
+      if (profile != null) {
+        debugPrint('[OwnerAuthProvider] OTP verification succeeded: ${profile.id} (${profile.fullName})');
+        _currentProfile = profile;
+        _saveProfileLocally(profile);
         _isLoading = false;
         _errorMessage = null;
         _status = AuthStatus.authenticated;
@@ -246,30 +231,19 @@ class OwnerAuthProvider extends ChangeNotifier {
 
     try {
       debugPrint('[OwnerAuthProvider] registerWithPhone: $fullName, $phone');
-      final res = await _repository.registerOwnerWithPhone(
+      final profile = await _repository.registerOwnerWithPhone(
         phone: phone,
         password: password,
         fullName: fullName,
       );
-      final userId = res.user?.id ?? _repository.currentUser?.id;
 
-      if (userId != null && userId.isNotEmpty) {
-        debugPrint('[OwnerAuthProvider] Registration succeeded: $userId');
-        await _loadProfile(userId);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(AppConstants.prefHasOnboarded, true);
-        _isLoading = false;
-        _errorMessage = null;
-        _status = AuthStatus.authenticated;
-        notifyListeners();
-        return true;
-      }
-
-      _errorMessage = 'Registration could not be completed. Please try again.';
+      _currentProfile = profile;
+      _saveProfileLocally(profile);
       _isLoading = false;
-      _status = AuthStatus.error;
+      _errorMessage = null;
+      _status = AuthStatus.authenticated;
       notifyListeners();
-      return false;
+      return true;
     } catch (e, stack) {
       debugPrint('[OwnerAuthProvider] registerWithPhone exception: $e\n$stack');
       _errorMessage = AppErrorHandler.getErrorMessage(e);

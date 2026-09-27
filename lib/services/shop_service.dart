@@ -6,13 +6,23 @@ import '../models/shop.dart';
 class ShopService {
   SupabaseClient get _client => SupabaseService.client;
 
-  Future<Shop?> fetchShopByOwner(String ownerId) async {
+  Future<Shop?> fetchShopByOwner(String ownerId, {String? phone}) async {
     try {
-      final data = await _client
+      var data = await _client
           .from('shops')
           .select()
           .eq('owner_id', ownerId)
           .maybeSingle();
+
+      if (data == null && phone != null && phone.isNotEmpty) {
+        final digits = phone.replaceAll(RegExp(r'\D'), '');
+        final last10 = digits.length >= 10 ? digits.substring(digits.length - 10) : digits;
+        data = await _client
+            .from('shops')
+            .select()
+            .or('phone.eq.$phone,phone.eq.$digits,phone.eq.$last10,phone.eq.+91$last10')
+            .maybeSingle();
+      }
 
       if (data == null) return null;
       return Shop.fromJson(data);
