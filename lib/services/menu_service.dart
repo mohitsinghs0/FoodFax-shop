@@ -54,14 +54,13 @@ class MenuService {
           .from('menu_items')
           .select()
           .eq('shop_id', shopId)
-          .or('is_active.eq.true,is_active.is.null')
-          .order('name', ascending: true);
+          .or('is_active.eq.true,is_active.is.null');
 
       if (categoryId != null && categoryId != 'all') {
         query = query.eq('category_id', categoryId);
       }
 
-      final res = await query;
+      final res = await query.order('name', ascending: true);
       return (res as List).map((m) => MenuItem.fromJson(m)).toList();
     } catch (_) {
       return [];

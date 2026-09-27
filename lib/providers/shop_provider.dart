@@ -36,6 +36,8 @@ class ShopProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> fetchShop(String ownerId) => checkShopSetup(ownerId);
+
   /// Save or create shop
   Future<bool> saveShop(Shop shop) async {
     _isLoading = true;

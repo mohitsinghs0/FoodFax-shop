@@ -89,6 +89,8 @@ class OrderProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> loadOrders(String shopId) => initForShop(shopId);
+
   void _setupRealtime(String shopId) {
     _realtimeSubscription?.cancel();
     _realtimeSubscription = _repository.subscribeToOrders(shopId).listen((data) {

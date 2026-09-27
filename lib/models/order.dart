@@ -8,6 +8,8 @@ class OrderItem {
   final bool isVeg;
   final String? notes;
 
+  String get menuItemName => name;
+
   OrderItem({
     required this.id,
     this.orderId,

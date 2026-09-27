@@ -78,7 +78,7 @@ class AuthService {
         if (user != null) {
           return OwnerProfile(
             id: user.id,
-            userId: user.id,
+            email: user.email ?? (user.phone != null ? '${user.phone}@foodfax.in' : ''),
             fullName: user.userMetadata?['full_name'] as String? ?? 'Shop Owner',
             phone: user.phone ?? '',
             createdAt: DateTime.tryParse(user.createdAt) ?? DateTime.now(),

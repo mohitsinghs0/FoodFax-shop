@@ -29,4 +29,5 @@ class AppConstants {
   static const String prefSoundEnabled = 'sound_notification_enabled';
   static const String prefSoundVolume = 'sound_notification_volume';
   static const String prefHasOnboarded = 'has_completed_owner_onboarding';
+  static const String hasCompletedOnboardingKey = prefHasOnboarded;
 }

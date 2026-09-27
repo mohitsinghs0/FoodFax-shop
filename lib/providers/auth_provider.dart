@@ -24,6 +24,7 @@ class OwnerAuthProvider extends ChangeNotifier {
 
   AuthStatus get status => _status;
   OwnerProfile? get currentProfile => _currentProfile;
+  OwnerProfile? get profile => _currentProfile;
   User? get currentUser => _repository.currentUser;
   String? get currentUserId => _currentProfile?.id ?? _repository.currentUser?.id;
   String? get errorMessage => _errorMessage;
@@ -31,6 +32,15 @@ class OwnerAuthProvider extends ChangeNotifier {
   bool get isAuthenticated =>
       (_status == AuthStatus.authenticated || _repository.isAuthenticated) &&
       (_currentProfile != null || _repository.currentUser != null);
+
+  Future<void> signOut() => logout();
+
+  Future<bool> register({
+    required String phone,
+    required String password,
+    required String fullName,
+  }) =>
+      registerWithPhone(phone: phone, password: password, fullName: fullName);
 
   void _init() async {
     // 1. Restore local cached profile if available

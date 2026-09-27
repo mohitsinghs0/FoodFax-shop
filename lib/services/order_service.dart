@@ -19,14 +19,13 @@ class OrderService {
               menu_items (*)
             )
           ''')
-          .eq('shop_id', shopId)
-          .order('created_at', ascending: false);
+          .eq('shop_id', shopId);
 
       if (status != null && status.isNotEmpty && status != 'all') {
         query = query.eq('status', status);
       }
 
-      final response = await query;
+      final response = await query.order('created_at', ascending: false);
       final List<dynamic> data = response as List<dynamic>;
       return data.map((json) => OwnerOrder.fromJson(json as Map<String, dynamic>)).toList();
     } catch (e) {
