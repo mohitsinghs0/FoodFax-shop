@@ -445,7 +445,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                     child: _buildQuickActionButton(
                       title: 'Analytics',
                       icon: Icons.insights,
-                      color: Colors.emerald,
+                      color: Colors.teal,
                       onTap: () => context.push('/sales'),
                     ),
                   ),
@@ -472,10 +472,10 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               if (orderProvider.orders.isEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 40),
-                  alignment: Center(
+                  child: Center(
                     child: Column(
                       children: [
-                        Icon(Icons.inbox_outlined, size: 48, color: AppColors.textMuted),
+                        const Icon(Icons.inbox_outlined, size: 48, color: AppColors.textMuted),
                         const SizedBox(height: 12),
                         const Text(
                           'No orders yet today',
