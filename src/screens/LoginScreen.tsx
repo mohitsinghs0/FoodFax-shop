@@ -27,6 +27,12 @@ export const LoginScreen: React.FC = () => {
     localStorage.setItem('foodfax_has_onboarded', 'true');
   }, []);
 
+  useEffect(() => {
+    if (errorMessage) {
+      setFormError(errorMessage);
+    }
+  }, [errorMessage]);
+
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');

@@ -92,18 +92,6 @@ const MainAppContent: React.FC = () => {
       {/* Bottom Nav Bar on internal screens */}
       {isInternalApp && <BottomNavBar />}
 
-      {/* Floating Performance HUD Badge on Internal Screens */}
-      {isInternalApp && (
-        <button
-          onClick={() => setShowOptimizationModal(true)}
-          className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 px-3 py-2 rounded-2xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold text-xs shadow-xl shadow-orange-950/40 flex items-center gap-2 border border-orange-400/30 transition active:scale-95 group"
-          title="Open API Latency & Rendering Optimization HUD"
-        >
-          <Zap className="w-3.5 h-3.5 fill-white animate-pulse" />
-          <span className="hidden sm:inline font-mono text-[11px]">Sub-50ms API</span>
-        </button>
-      )}
-
       {/* On-demand Lazy-loaded Modals - Mounted only when needed */}
       <Suspense fallback={null}>
         {/* Order Details Modal (loads only when an order is selected) */}

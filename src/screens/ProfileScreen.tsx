@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
 import { 
+  ArrowLeft, 
   Store, 
-  SlidersHorizontal, 
+  Settings, 
   QrCode, 
-  TrendingUp, 
   Bell, 
-  LogOut, 
   ChevronRight,
-  ShieldCheck,
-  Phone
+  LogOut
 } from 'lucide-react';
 
 interface ProfileScreenProps {
@@ -26,135 +24,129 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const { ownerProfile, shop, logout, setActiveScreen } = useOwnerApp();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
+  const initial = (ownerProfile?.fullName || shop?.name || 'M')[0].toUpperCase();
+
   return (
-    <div className="space-y-4 pb-24 p-4 max-w-xl mx-auto">
-      {/* Profile Header */}
-      <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 flex items-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center text-white text-xl font-black shadow-lg shadow-orange-950 shrink-0">
-          {ownerProfile?.fullName ? ownerProfile.fullName[0].toUpperCase() : 'O'}
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <h3 className="text-base font-extrabold text-white truncate">
-              {ownerProfile?.fullName || 'Restaurant Owner'}
+    <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] pb-24 select-none">
+      {/* Top App Bar matching Photo 5 */}
+      <div className="px-4 py-3.5 border-b border-[#131B2E] flex items-center gap-3 sticky top-0 bg-[#0B0F19] z-20">
+        <button
+          onClick={() => setActiveScreen('dashboard')}
+          className="p-1 -ml-1 text-white hover:text-[#F97316] transition"
+        >
+          <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
+        </button>
+        <h2 className="text-[17px] font-black tracking-tight text-white">
+          Store Owner Profile
+        </h2>
+      </div>
+
+      <div className="px-4 py-4 space-y-4 max-w-md mx-auto">
+        {/* Top Profile Card matching Photo 5 */}
+        <div className="bg-[#131B2E] border border-[#23304A] rounded-[22px] p-5 flex items-center gap-4">
+          {/* Big Orange Round Avatar */}
+          <div className="w-16 h-16 rounded-full bg-[#F97316] text-white font-black text-2xl flex items-center justify-center shrink-0 shadow-md shadow-orange-950/40">
+            {initial}
+          </div>
+
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-white leading-tight capitalize truncate">
+              {ownerProfile?.fullName || shop?.name?.split(' ')[0] || 'meena'}
             </h3>
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <p className="text-xs text-[#94A3B8] font-medium mt-1 truncate">
+              {ownerProfile?.phone || '+919321444296'}
+            </p>
+            <p className="text-xs font-bold text-[#F97316] mt-1 truncate">
+              {shop?.name || 'Meena bajar'}
+            </p>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 truncate mt-0.5">
-            <Phone className="w-3 h-3 text-slate-500 shrink-0" />
-            <span>{ownerProfile?.phone || 'Registered Partner'}</span>
-          </div>
-          <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-500/15 border border-orange-500/30 text-[10px] font-bold text-orange-400">
-            <Store className="w-3 h-3" />
-            <span className="truncate">{shop?.name || 'Verified Partner'}</span>
-          </div>
+        </div>
+
+        {/* Menu Navigation Card matching Photo 5 */}
+        <div className="bg-[#131B2E] border border-[#23304A] rounded-[22px] overflow-hidden divide-y divide-[#23304A]/60">
+          {/* Item 1: Shop Profile & Address */}
+          <button
+            onClick={onOpenShopProfile}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a253e] transition text-left"
+          >
+            <div className="flex items-center gap-3.5">
+              <Store className="w-5 h-5 text-[#F97316] stroke-[2]" />
+              <span className="text-[13px] font-bold text-white">
+                Shop Profile &amp; Address
+              </span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#64748B]" />
+          </button>
+
+          {/* Item 2: Kitchen & Fulfillment Settings */}
+          <button
+            onClick={onOpenSettings}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a253e] transition text-left"
+          >
+            <div className="flex items-center gap-3.5">
+              <Settings className="w-5 h-5 text-cyan-400 stroke-[2]" />
+              <span className="text-[13px] font-bold text-white">
+                Kitchen &amp; Fulfillment Settings
+              </span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#64748B]" />
+          </button>
+
+          {/* Item 3: Store Counter QR Code */}
+          <button
+            onClick={() => setActiveScreen('shop_qr')}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a253e] transition text-left"
+          >
+            <div className="flex items-center gap-3.5">
+              <QrCode className="w-5 h-5 text-purple-400 stroke-[2]" />
+              <span className="text-[13px] font-bold text-white">
+                Store Counter QR Code
+              </span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#64748B]" />
+          </button>
+
+          {/* Item 4: Chime & Sound Alerts */}
+          <button
+            onClick={onOpenNotifications}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a253e] transition text-left"
+          >
+            <div className="flex items-center gap-3.5">
+              <Bell className="w-5 h-5 text-yellow-400 stroke-[2]" />
+              <span className="text-[13px] font-bold text-white">
+                Chime &amp; Sound Alerts
+              </span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#64748B]" />
+          </button>
+        </div>
+
+        {/* Red Outlined Sign Out Button matching Photo 5 */}
+        <div className="pt-4">
+          <button
+            onClick={() => setShowLogoutConfirm(true)}
+            className="w-full py-3.5 rounded-[16px] border border-rose-500/80 bg-transparent text-rose-400 hover:bg-rose-500/10 font-bold text-sm text-center transition active:scale-[0.99]"
+          >
+            Sign Out from Store
+          </button>
         </div>
       </div>
 
-      {/* Settings Navigation List */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden divide-y divide-slate-800/80">
-        <button
-          onClick={onOpenShopProfile}
-          className="w-full p-4 flex items-center justify-between hover:bg-slate-850 transition text-left"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center">
-              <Store className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">Restaurant Profile & Address</p>
-              <p className="text-[11px] text-slate-400">Timings, description, address & UPI payout ID</p>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-500" />
-        </button>
-
-        <button
-          onClick={onOpenSettings}
-          className="w-full p-4 flex items-center justify-between hover:bg-slate-850 transition text-left"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center">
-              <SlidersHorizontal className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">Operations & Rush Settings</p>
-              <p className="text-[11px] text-slate-400">Rush buffer, order fulfilment modes, chime volume</p>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-500" />
-        </button>
-
-        <button
-          onClick={() => setActiveScreen('shop_qr')}
-          className="w-full p-4 flex items-center justify-between hover:bg-slate-850 transition text-left"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center">
-              <QrCode className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">Store QR Standee</p>
-              <p className="text-[11px] text-slate-400">Print table standees for direct ordering</p>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-500" />
-        </button>
-
-        <button
-          onClick={() => setActiveScreen('sales')}
-          className="w-full p-4 flex items-center justify-between hover:bg-slate-850 transition text-left"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">Sales & Financial History</p>
-              <p className="text-[11px] text-slate-400">Settlements, order history, and payment types</p>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-500" />
-        </button>
-
-        <button
-          onClick={onOpenNotifications}
-          className="w-full p-4 flex items-center justify-between hover:bg-slate-850 transition text-left"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center">
-              <Bell className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">Order Alerts & Sound Test</p>
-              <p className="text-[11px] text-slate-400">Manage audio chimes and incoming alerts</p>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-500" />
-        </button>
-      </div>
-
-      {/* Logout */}
-      <button
-        onClick={() => setShowLogoutConfirm(true)}
-        className="w-full p-4 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold flex items-center justify-center gap-2 transition"
-      >
-        <LogOut className="w-4 h-4" />
-        <span>Log Out from FoodFax Owner App</span>
-      </button>
-
-      {/* Logout Confirmation Modal */}
+      {/* Logout Confirmation Dialog */}
       {showLogoutConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
-            <h4 className="text-base font-bold text-white">Log Out?</h4>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Are you sure you want to end this restaurant session? You will need to sign in again with your phone number to access the owner dashboard.
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#131B2E] border border-[#23304A] rounded-[24px] p-6 max-w-sm w-full text-center shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-rose-500/15 text-rose-400 flex items-center justify-center mx-auto mb-3">
+              <LogOut className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-black text-white">Sign Out?</h3>
+            <p className="text-xs text-[#94A3B8] mt-1.5">
+              Are you sure you want to sign out from your restaurant dashboard?
             </p>
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2.5 mt-5">
               <button
                 onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300"
+                className="flex-1 py-2.5 rounded-xl bg-[#0B0F19] text-[#94A3B8] font-bold text-xs hover:text-white"
               >
                 Cancel
               </button>
@@ -163,9 +155,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   setShowLogoutConfirm(false);
                   logout();
                 }}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-bold text-white shadow-md shadow-red-950"
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
               >
-                Log Out
+                Sign Out
               </button>
             </div>
           </div>

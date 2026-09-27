@@ -205,28 +205,34 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.insights, color: Colors.white, size: 16),
                               ),
-                              child: const Icon(Icons.insights, color: Colors.white, size: 16),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              "TODAY'S PERFORMANCE",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.8,
+                              const SizedBox(width: 8),
+                              const Flexible(
+                                child: Text(
+                                  "TODAY'S PERFORMANCE",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.5,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
@@ -234,11 +240,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.bolt, color: Colors.yellowAccent, size: 12),
-                              SizedBox(width: 4),
+                              SizedBox(width: 3),
                               Text(
-                                'Live Supabase',
+                                'Live',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 10,

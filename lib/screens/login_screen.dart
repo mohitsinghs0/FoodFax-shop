@@ -23,10 +23,12 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
   final _passwordController = TextEditingController();
   final _otpController = TextEditingController();
 
-  String _countryCode = '+91';
+  final String _countryCode = '+91';
   bool _obscurePassword = true;
   bool _useOtpMode = false;
   bool _otpSent = false;
+  String? _inlineError;
+  String? _inlineSuccess;
 
   @override
   void initState() {
@@ -52,88 +54,140 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
   String get _fullPhoneNumber => '$_countryCode${_phoneController.text.trim()}';
 
   Future<void> _handlePasswordLogin() async {
+    setState(() {
+      _inlineError = null;
+      _inlineSuccess = null;
+    });
+
     if (!_formKey.currentState!.validate()) return;
 
     final auth = context.read<OwnerAuthProvider>();
     final shopProvider = context.read<ShopProvider>();
 
-    final success = await auth.loginWithPhone(
-      _fullPhoneNumber,
-      _passwordController.text,
-    );
+    try {
+      final success = await auth.loginWithPhone(
+        _fullPhoneNumber,
+        _passwordController.text,
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (success) {
-      final userId = auth.currentProfile?.id ?? auth.currentUser?.id;
-      if (userId != null && userId.isNotEmpty) {
-        final hasShop = await shopProvider.checkShopSetup(userId);
-        if (!mounted) return;
-        if (hasShop) {
-          context.go('/dashboard');
+      if (success) {
+        final userId = auth.currentProfile?.id ?? auth.currentUser?.id;
+        if (userId != null && userId.isNotEmpty) {
+          final hasShop = await shopProvider.checkShopSetup(userId);
+          if (!mounted) return;
+          if (hasShop) {
+            context.go('/dashboard');
+          } else {
+            context.go('/shop-setup');
+          }
         } else {
-          context.go('/shop-setup');
+          context.go('/dashboard');
         }
       } else {
-        context.go('/dashboard');
+        final err = auth.errorMessage ?? 'Incorrect mobile number or password. Please verify and try again.';
+        setState(() => _inlineError = err);
+        AppErrorHandler.showErrorSnackBar(context, err);
       }
-    } else if (auth.errorMessage != null) {
-      AppErrorHandler.showErrorSnackBar(context, auth.errorMessage!);
+    } catch (e) {
+      final err = AppErrorHandler.getErrorMessage(e);
+      if (mounted) {
+        setState(() => _inlineError = err);
+        AppErrorHandler.showErrorSnackBar(context, err);
+      }
     }
   }
 
   Future<void> _handleSendOtp() async {
+    setState(() {
+      _inlineError = null;
+      _inlineSuccess = null;
+    });
+
     final rawPhone = _phoneController.text.trim();
     if (rawPhone.length < 10) {
-      AppErrorHandler.showErrorSnackBar(context, 'Please enter a valid 10-digit mobile number');
+      const msg = 'Please enter a valid 10-digit mobile number';
+      setState(() => _inlineError = msg);
+      AppErrorHandler.showErrorSnackBar(context, msg);
       return;
     }
 
     final auth = context.read<OwnerAuthProvider>();
-    final ok = await auth.sendPhoneOtp(_fullPhoneNumber);
-    if (!mounted) return;
+    try {
+      final ok = await auth.sendPhoneOtp(_fullPhoneNumber);
+      if (!mounted) return;
 
-    if (ok) {
-      setState(() => _otpSent = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('OTP sent to $_fullPhoneNumber. If SMS not received, enter 123456.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    } else if (auth.errorMessage != null) {
-      AppErrorHandler.showErrorSnackBar(context, auth.errorMessage!);
+      if (ok) {
+        setState(() {
+          _otpSent = true;
+          _inlineSuccess = 'OTP sent to $_fullPhoneNumber. (Use 123456 in demo mode)';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('OTP sent to $_fullPhoneNumber. Enter code 123456 to verify.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else {
+        final err = auth.errorMessage ?? 'Failed to send OTP code. Please try using password login.';
+        setState(() => _inlineError = err);
+        AppErrorHandler.showErrorSnackBar(context, err);
+      }
+    } catch (e) {
+      final err = AppErrorHandler.getErrorMessage(e);
+      if (mounted) {
+        setState(() => _inlineError = err);
+        AppErrorHandler.showErrorSnackBar(context, err);
+      }
     }
   }
 
   Future<void> _handleVerifyOtp() async {
+    setState(() {
+      _inlineError = null;
+      _inlineSuccess = null;
+    });
+
     final otp = _otpController.text.trim();
     if (otp.length < 4) {
-      AppErrorHandler.showErrorSnackBar(context, 'Please enter the verification code');
+      const msg = 'Please enter the 6-digit verification code (e.g. 123456)';
+      setState(() => _inlineError = msg);
+      AppErrorHandler.showErrorSnackBar(context, msg);
       return;
     }
 
     final auth = context.read<OwnerAuthProvider>();
     final shopProvider = context.read<ShopProvider>();
 
-    final success = await auth.verifyPhoneOtp(_fullPhoneNumber, otp);
-    if (!mounted) return;
+    try {
+      final success = await auth.verifyPhoneOtp(_fullPhoneNumber, otp);
+      if (!mounted) return;
 
-    if (success) {
-      final userId = auth.currentProfile?.id ?? auth.currentUser?.id;
-      if (userId != null && userId.isNotEmpty) {
-        final hasShop = await shopProvider.checkShopSetup(userId);
-        if (!mounted) return;
-        if (hasShop) {
-          context.go('/dashboard');
+      if (success) {
+        final userId = auth.currentProfile?.id ?? auth.currentUser?.id;
+        if (userId != null && userId.isNotEmpty) {
+          final hasShop = await shopProvider.checkShopSetup(userId);
+          if (!mounted) return;
+          if (hasShop) {
+            context.go('/dashboard');
+          } else {
+            context.go('/shop-setup');
+          }
         } else {
-          context.go('/shop-setup');
+          context.go('/dashboard');
         }
       } else {
-        context.go('/dashboard');
+        final err = auth.errorMessage ?? 'Invalid verification code. Please enter 123456 or resend code.';
+        setState(() => _inlineError = err);
+        AppErrorHandler.showErrorSnackBar(context, err);
       }
-    } else if (auth.errorMessage != null) {
-      AppErrorHandler.showErrorSnackBar(context, auth.errorMessage!);
+    } catch (e) {
+      final err = AppErrorHandler.getErrorMessage(e);
+      if (mounted) {
+        setState(() => _inlineError = err);
+        AppErrorHandler.showErrorSnackBar(context, err);
+      }
     }
   }
 
@@ -143,6 +197,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
     final newPasswordController = TextEditingController();
     bool isCodeSent = false;
     String? localCode;
+    String? modalError;
 
     showModalBottomSheet(
       context: context,
@@ -172,22 +227,44 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                         'Reset Password',
                         style: TextStyle(
                           fontSize: 18,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.bold,
                           color: AppColors.textPrimary,
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                        icon: const Icon(Icons.close, color: AppColors.textMuted),
                         onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    !isCodeSent
-                        ? 'Enter your registered mobile number to receive a verification code.'
-                        : 'Enter the 6-digit verification code and set your new password.',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  const SizedBox(height: 12),
+
+                  if (modalError != null)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.15),
+                        border: Border.all(color: Colors.red.shade400.withValues(alpha: 0.3)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red.shade400, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              modalError!,
+                              style: TextStyle(fontSize: 12, color: Colors.red.shade300, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const Text(
+                    'Enter your registered mobile number to receive a verification code.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 16),
                   if (!isCodeSent) ...[
@@ -204,10 +281,11 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                       onPressed: () {
                         final raw = resetPhoneController.text.trim();
                         if (raw.length < 10) {
-                          AppErrorHandler.showErrorSnackBar(ctx, 'Enter valid 10-digit number');
+                          setModalState(() => modalError = 'Enter a valid 10-digit mobile number');
                           return;
                         }
                         setModalState(() {
+                          modalError = null;
                           isCodeSent = true;
                           localCode = '123456';
                         });
@@ -251,21 +329,21 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                       text: 'Update Password',
                       onPressed: () {
                         if (resetOtpController.text.trim().length < 4) {
-                          AppErrorHandler.showErrorSnackBar(ctx, 'Enter valid code');
+                          setModalState(() => modalError = 'Enter valid 6-digit code (123456)');
                           return;
                         }
                         if (newPasswordController.text.trim().length < 6) {
-                          AppErrorHandler.showErrorSnackBar(ctx, 'Password must be at least 6 characters');
+                          setModalState(() => modalError = 'Password must be at least 6 characters');
                           return;
                         }
                         Navigator.pop(ctx);
                         _passwordController.text = newPasswordController.text;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Password updated successfully! Please sign in.'),
-                            backgroundColor: AppColors.success,
-                          ),
-                        );
+                        _phoneController.text = resetPhoneController.text;
+                        setState(() {
+                          _useOtpMode = false;
+                          _inlineSuccess = 'Password updated successfully! Please sign in with your new password.';
+                        });
+                        AppErrorHandler.showSuccessSnackBar(context, 'Password updated successfully! Please sign in.');
                       },
                     ),
                   ],
@@ -283,6 +361,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
     final auth = context.watch<OwnerAuthProvider>();
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
@@ -330,7 +409,66 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                     textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
+
+                // Inline Feedback Banners
+                if (_inlineError != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade900.withValues(alpha: 0.25),
+                      border: Border.all(color: Colors.red.shade600.withValues(alpha: 0.5)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.error_outline_rounded, color: Colors.red.shade400, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _inlineError!,
+                            style: TextStyle(
+                              color: Colors.red.shade300,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                if (_inlineSuccess != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.emerald.shade900.withValues(alpha: 0.25),
+                      border: Border.all(color: Colors.emerald.shade600.withValues(alpha: 0.5)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.check_circle_outline_rounded, color: Colors.emerald.shade400, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _inlineSuccess!,
+                            style: TextStyle(
+                              color: Colors.emerald.shade300,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Phone Input with Country Code
                 const Text(
@@ -339,6 +477,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
@@ -386,12 +525,16 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                            borderSide: const BorderSide(color: AppColors.primary, width: 2.0),
                           ),
                         ),
+                        onChanged: (_) {
+                          if (_inlineError != null) setState(() => _inlineError = null);
+                        },
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) return 'Please enter mobile number';
-                          if (v.trim().length < 10) return 'Enter a valid 10-digit mobile number';
+                          final cleaned = v.replaceAll(RegExp(r'\D'), '');
+                          if (cleaned.length < 10) return 'Enter a valid 10-digit mobile number';
                           return null;
                         },
                       ),
@@ -412,7 +555,12 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _useOtpMode = false),
+                          onTap: () {
+                            setState(() {
+                              _useOtpMode = false;
+                              _inlineError = null;
+                            });
+                          },
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
@@ -433,7 +581,12 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                       ),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _useOtpMode = true),
+                          onTap: () {
+                            setState(() {
+                              _useOtpMode = true;
+                              _inlineError = null;
+                            });
+                          },
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
@@ -473,6 +626,9 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                       ),
                       onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                     ),
+                    onChanged: (_) {
+                      if (_inlineError != null) setState(() => _inlineError = null);
+                    },
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Please enter your password';
                       if (v.length < 6) return 'Password must be at least 6 characters';
@@ -518,8 +674,11 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                       hint: '123456',
                       prefixIcon: Icons.mark_email_read_outlined,
                       keyboardType: TextInputType.number,
+                      onChanged: (_) {
+                        if (_inlineError != null) setState(() => _inlineError = null);
+                      },
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty) return 'Enter the OTP code received';
+                        if (v == null || v.trim().isEmpty) return 'Enter the OTP code received (123456)';
                         return null;
                       },
                     ),
@@ -533,7 +692,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
                     Center(
                       child: TextButton(
                         onPressed: _handleSendOtp,
-                        child: const Text('Resend OTP Code', style: TextStyle(color: AppColors.primary, fontSize: 13)),
+                        child: const Text('Resend OTP Code', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ],

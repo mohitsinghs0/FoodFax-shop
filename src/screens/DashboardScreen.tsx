@@ -1,38 +1,32 @@
 import React, { useMemo } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
 import { 
+  Zap, 
+  TrendingUp, 
   IndianRupee, 
   Receipt, 
   CookingPot, 
   CheckCircle2, 
-  Flame, 
-  AlertTriangle, 
-  ArrowRight, 
   UtensilsCrossed, 
+  BookOpen, 
   QrCode, 
-  TrendingUp, 
-  Clock,
-  Sparkles,
-  ShoppingBag,
-  CalendarDays,
-  Percent
+  BarChart3,
+  Inbox,
+  AlertCircle
 } from 'lucide-react';
 
 export const DashboardScreen: React.FC = () => {
-  const { shop, orders, toggleRushMode, updateOrderStatus, setActiveScreen, setSelectedOrderId } = useOwnerApp();
+  const { shop, orders, toggleRushMode, setActiveScreen, setSelectedOrderId } = useOwnerApp();
 
-  // Memoized KPI calculations for high-performance dashboard rendering
   const {
     todayOrders,
     todayCompletedOrders,
     todayRevenue,
-    todayAOV,
     pendingOrders,
     preparingOrders,
     readyOrders,
     completedOrders,
     activeOrders,
-    allTimeRevenue,
   } = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -46,436 +40,298 @@ export const DashboardScreen: React.FC = () => {
     const tOrders = orders.filter((o) => isToday(o.createdAt));
     const tCompleted = tOrders.filter((o) => o.status === 'completed');
     const tRev = tCompleted.reduce((acc, curr) => acc + (curr.totalAmount || 0), 0);
-    const tAOV = tCompleted.length > 0 ? Math.round(tRev / tCompleted.length) : 0;
 
     const pending = orders.filter((o) => o.status === 'pending');
     const preparing = orders.filter((o) => o.status === 'preparing');
     const ready = orders.filter((o) => o.status === 'ready');
     const completed = orders.filter((o) => o.status === 'completed');
     const active = orders.filter((o) => ['pending', 'accepted', 'preparing', 'ready'].includes(o.status));
-    const allRev = completed.reduce((acc, curr) => acc + (curr.totalAmount || 0), 0);
 
     return {
       todayOrders: tOrders,
       todayCompletedOrders: tCompleted,
       todayRevenue: tRev,
-      todayAOV: tAOV,
       pendingOrders: pending,
       preparingOrders: preparing,
       readyOrders: ready,
       completedOrders: completed,
       activeOrders: active,
-      allTimeRevenue: allRev,
     };
   }, [orders]);
 
   if (!shop) return null;
 
   return (
-    <div className="space-y-4 pb-20 p-4 max-w-4xl mx-auto">
-      {/* Rush Mode Banner */}
-      <div
-        className={`p-3.5 sm:p-4 rounded-2xl border transition-all ${
-          shop.isRushMode
-            ? 'bg-red-500/15 border-red-500/40 text-red-100 shadow-lg shadow-red-950/20'
-            : 'bg-slate-900 border-slate-800 text-slate-300'
-        }`}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                shop.isRushMode ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-800 text-slate-400'
-              }`}
-            >
-              <Flame className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-extrabold text-sm sm:text-base text-white">
-                  Kitchen Rush Mode {shop.isRushMode ? 'IS ON' : 'Off'}
-                </h4>
-                {shop.isRushMode && (
-                  <span className="text-[10px] bg-red-600 text-white font-black px-1.5 py-0.5 rounded">
-                    +{shop.rushExtraMinutes}m Buffer
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-400">
-                {shop.isRushMode
-                  ? `Customers see +${shop.rushExtraMinutes} mins extra prep time to protect kitchen quality.`
-                  : 'Enable during peak dining hours to add automated prep delay buffers.'}
-              </p>
-            </div>
+    <div className="space-y-4 px-4 py-4 max-w-md mx-auto select-none">
+      {/* Kitchen Rush Mode Card */}
+      <div className="bg-[#131B2E] border border-[#23304A] rounded-[18px] p-3.5 flex items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#F97316]/15 text-[#F97316] flex items-center justify-center shrink-0 mt-0.5">
+            <Zap className="w-5 h-5 fill-[#F97316] text-[#F97316]" />
           </div>
-
-          <button
-            onClick={() => toggleRushMode(!shop.isRushMode, 15)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition shrink-0 ${
-              shop.isRushMode
-                ? 'bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-950'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-            }`}
-          >
-            {shop.isRushMode ? 'Turn Off Rush' : 'Activate Rush'}
-          </button>
-        </div>
-      </div>
-
-      {/* TODAY'S PERFORMANCE HIGHLIGHT HERO CARD */}
-      <div className="p-5 rounded-3xl bg-gradient-to-br from-orange-600 via-orange-500 to-amber-600 text-white shadow-xl shadow-orange-950/30 relative overflow-hidden">
-        {/* Subtle decorative glow */}
-        <div className="absolute top-0 right-0 -mt-6 -mr-6 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/3 -mb-8 w-44 h-44 bg-amber-400/20 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-white/20 rounded-xl backdrop-blur-md">
-                <CalendarDays className="w-4 h-4 text-white" />
-              </div>
-              <span className="text-xs font-black tracking-wider uppercase text-orange-100">
-                Today&apos;s Performance
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white/15 backdrop-blur-md rounded-full text-[11px] font-bold text-white">
-              <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
-              <span>Live Database Sync</span>
-            </div>
-          </div>
-
-          {/* Primary stats row: Total Orders Today & Total Revenue Today */}
-          <div className="grid grid-cols-2 gap-4 pt-1">
-            <div className="bg-black/20 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
-              <div className="flex items-center justify-between text-orange-100 text-xs mb-1 font-medium">
-                <span>Total Orders Today</span>
-                <ShoppingBag className="w-4 h-4 text-orange-200" />
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                  {todayOrders.length}
-                </span>
-                <span className="text-[11px] text-orange-200 font-semibold">
-                  {todayCompletedOrders.length} delivered
-                </span>
-              </div>
-            </div>
-
-            <div className="bg-black/20 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
-              <div className="flex items-center justify-between text-orange-100 text-xs mb-1 font-medium">
-                <span>Today&apos;s Revenue</span>
-                <IndianRupee className="w-4 h-4 text-orange-200" />
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                  ₹{todayRevenue.toLocaleString()}
-                </span>
-                <span className="text-[11px] text-orange-200 font-semibold">
-                  settled
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Sub-bar with extra today metrics */}
-          <div className="flex items-center justify-between pt-1 border-t border-white/15 text-xs text-orange-100/90 font-medium">
-            <div className="flex items-center gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5 text-orange-200" />
-              <span>Avg Order Value (AOV): <strong className="text-white">₹{todayAOV}</strong></span>
-            </div>
-            <button
-              onClick={() => setActiveScreen('orders')}
-              className="text-white hover:text-orange-200 font-bold flex items-center gap-1 text-[11px] transition"
-            >
-              <span>View Today&apos;s Orders</span>
-              <ArrowRight className="w-3 h-3" />
-            </button>
+          <div>
+            <h4 className="text-[13px] font-bold text-white leading-snug">
+              Kitchen Rush Mode: {shop.isRushMode ? 'ON' : 'OFF'}
+            </h4>
+            <p className="text-[11px] text-[#94A3B8] leading-tight mt-0.5 max-w-[210px]">
+              Turn ON during heavy rush to add extra prep time to customer estimates
+            </p>
           </div>
         </div>
+
+        <button
+          onClick={() => toggleRushMode(!shop.isRushMode, 15)}
+          className="text-[13px] font-bold text-[#F97316] hover:underline shrink-0 pr-1"
+        >
+          {shop.isRushMode ? 'Turn OFF' : 'Turn ON'}
+        </button>
       </div>
 
-      {/* Pending Orders Alert Banner */}
+      {/* Pending Orders Notification Pill (if any pending) */}
       {pendingOrders.length > 0 && (
         <div
           onClick={() => setActiveScreen('orders')}
-          className="p-3.5 rounded-2xl bg-amber-500/15 border-2 border-amber-500 text-amber-200 flex items-center justify-between cursor-pointer hover:bg-amber-500/20 transition animate-pulse"
+          className="bg-amber-500/15 border-2 border-amber-500 rounded-[14px] p-3 flex items-center justify-between cursor-pointer hover:bg-amber-500/20 transition animate-pulse"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500 text-black font-black flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
             <div>
-              <h5 className="font-black text-sm text-amber-300">
-                {pendingOrders.length} NEW ORDER{pendingOrders.length > 1 ? 'S' : ''} AWAITING ACCEPTANCE!
-              </h5>
-              <p className="text-xs text-amber-200/80">Tap here to review and accept incoming tickets</p>
+              <p className="text-xs font-black text-amber-300">
+                {pendingOrders.length} NEW ORDER{pendingOrders.length > 1 ? 'S' : ''} WAITING!
+              </p>
+              <p className="text-[11px] text-amber-200/80">Tap to review & accept immediately</p>
             </div>
           </div>
-          <ArrowRight className="w-5 h-5 text-amber-400" />
+          <span className="text-xs font-bold text-amber-400">Review &rarr;</span>
         </div>
       )}
 
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* Total Sales All-Time */}
-        <div 
-          onClick={() => setActiveScreen('sales')}
-          className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 cursor-pointer transition"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400 font-medium">All-Time Revenue</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
-              <IndianRupee className="w-4 h-4" />
+      {/* TODAY'S PERFORMANCE Highlight Orange Card */}
+      <div className="bg-gradient-to-r from-[#EA580C] via-[#F97316] to-[#D97706] rounded-[22px] p-4 text-white shadow-lg shadow-orange-950/20">
+        <div className="flex items-center justify-between mb-3.5">
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-white/20 rounded-lg backdrop-blur-sm">
+              <TrendingUp className="w-4 h-4 text-white" />
+            </div>
+            <span className="text-[11px] font-black tracking-wider uppercase text-white">
+              Today&apos;s Performance
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 px-2 py-0.5 bg-white/20 backdrop-blur-sm rounded-full text-[10px] font-bold text-white">
+            <Zap className="w-3 h-3 text-yellow-300 fill-yellow-300" />
+            <span>Live</span>
+          </div>
+        </div>
+
+        {/* 2 Inner KPI Boxes */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-black/20 backdrop-blur-sm rounded-[16px] p-3">
+            <span className="text-[11px] text-white/80 font-semibold block leading-tight">
+              Total Orders Today
+            </span>
+            <div className="flex items-baseline gap-1.5 mt-1.5">
+              <span className="text-2xl font-black text-white leading-none">
+                {todayOrders.length}
+              </span>
+              <span className="text-[10px] text-white/70 font-medium">
+                ({todayCompletedOrders.length} settled)
+              </span>
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-white">
-            ₹{completedOrders.reduce((acc, curr) => acc + curr.totalAmount, 0).toLocaleString()}
-          </p>
-          <p className="text-[11px] text-emerald-400 mt-1 font-semibold">
-            {completedOrders.length} all-time orders
+
+          <div className="bg-black/20 backdrop-blur-sm rounded-[16px] p-3">
+            <span className="text-[11px] text-white/80 font-semibold block leading-tight">
+              Today&apos;s Revenue
+            </span>
+            <div className="flex items-baseline gap-1 mt-1.5">
+              <span className="text-2xl font-black text-white leading-none">
+                ₹{todayRevenue}
+              </span>
+              <span className="text-[10px] text-white/70 font-medium">
+                settled
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2x2 Performance Grid Cards */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* Today's Sales */}
+        <div 
+          onClick={() => setActiveScreen('sales')}
+          className="bg-[#131B2E] border border-[#23304A] rounded-[18px] p-3.5 cursor-pointer hover:border-slate-700 transition"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[12px] text-[#94A3B8] font-bold">Today&apos;s Sales</span>
+            <div className="w-7 h-7 rounded-[10px] bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+              <IndianRupee className="w-4 h-4 stroke-[2.5]" />
+            </div>
+          </div>
+          <p className="text-2xl font-black text-white leading-tight">₹{todayRevenue}</p>
+          <p className="text-[10px] text-[#94A3B8] mt-1 leading-tight truncate">
+            From completed orders
           </p>
         </div>
 
         {/* Active Orders */}
         <div 
           onClick={() => setActiveScreen('orders')}
-          className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 cursor-pointer transition"
+          className="bg-[#131B2E] border border-[#23304A] rounded-[18px] p-3.5 cursor-pointer hover:border-slate-700 transition"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400 font-medium">Active Kitchen</span>
-            <div className="w-7 h-7 rounded-lg bg-orange-500/15 text-orange-400 flex items-center justify-center">
-              <Receipt className="w-4 h-4" />
+            <span className="text-[12px] text-[#94A3B8] font-bold">Active Orders</span>
+            <div className="w-7 h-7 rounded-[10px] bg-orange-500/15 text-[#F97316] flex items-center justify-center">
+              <Receipt className="w-4 h-4 stroke-[2.2]" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-white">{activeOrders.length}</p>
-          <p className="text-[11px] text-slate-400 mt-1">
+          <p className="text-2xl font-black text-white leading-tight">{activeOrders.length}</p>
+          <p className="text-[10px] text-[#94A3B8] mt-1 leading-tight truncate">
             {pendingOrders.length} pending acceptance
           </p>
         </div>
 
-        {/* Preparing */}
+        {/* Preparing in Kitchen */}
         <div 
           onClick={() => setActiveScreen('orders')}
-          className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 cursor-pointer transition"
+          className="bg-[#131B2E] border border-[#23304A] rounded-[18px] p-3.5 cursor-pointer hover:border-slate-700 transition"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400 font-medium">In Cooking</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center">
-              <CookingPot className="w-4 h-4" />
+            <span className="text-[12px] text-[#94A3B8] font-bold truncate">Preparing in Ki...</span>
+            <div className="w-7 h-7 rounded-[10px] bg-blue-500/15 text-blue-400 flex items-center justify-center">
+              <CookingPot className="w-4 h-4 stroke-[2.2]" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-white">{preparingOrders.length}</p>
-          <p className="text-[11px] text-blue-400 mt-1">
+          <p className="text-2xl font-black text-white leading-tight">{preparingOrders.length}</p>
+          <p className="text-[10px] text-[#94A3B8] mt-1 leading-tight truncate">
             {readyOrders.length} ready for pickup
           </p>
         </div>
 
-        {/* Completed */}
+        {/* Completed Today */}
         <div 
           onClick={() => setActiveScreen('orders')}
-          className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 cursor-pointer transition"
+          className="bg-[#131B2E] border border-[#23304A] rounded-[18px] p-3.5 cursor-pointer hover:border-slate-700 transition"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400 font-medium">Completed</span>
-            <div className="w-7 h-7 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4" />
+            <span className="text-[12px] text-[#94A3B8] font-bold truncate">Completed To...</span>
+            <div className="w-7 h-7 rounded-[10px] bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+              <CheckCircle2 className="w-4 h-4 stroke-[2.2]" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-white">{completedOrders.length}</p>
-          <p className="text-[11px] text-teal-400 mt-1 font-semibold">100% fulfilled</p>
+          <p className="text-2xl font-black text-white leading-tight">{completedOrders.length}</p>
+          <p className="text-[10px] text-[#94A3B8] mt-1 leading-tight truncate">
+            Full order history
+          </p>
         </div>
       </div>
 
-      {/* Quick Action Buttons */}
-      <div>
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-          Owner Quick Actions
+      {/* Quick Owner Actions */}
+      <div className="pt-1">
+        <h3 className="text-[15px] font-black text-[#F8FAFC] mb-3">
+          Quick Owner Actions
         </h3>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 gap-2.5">
+          {/* Action 1: Live Orders */}
           <button
             onClick={() => setActiveScreen('orders')}
-            className="p-3 rounded-2xl bg-slate-900 hover:bg-slate-850 border border-slate-800 flex flex-col items-center justify-center text-center transition group"
+            className="bg-[#131B2E] border border-[#23304A] hover:border-[#F97316]/50 rounded-[16px] py-3 px-1.5 flex flex-col items-center justify-center transition group"
           >
-            <div className="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center mb-1.5 group-hover:scale-110 transition">
-              <Receipt className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-full bg-orange-500/15 text-[#F97316] flex items-center justify-center mb-1.5 group-hover:scale-105 transition">
+              <CookingPot className="w-5 h-5 stroke-[2]" />
             </div>
-            <span className="text-xs font-bold text-slate-200">Live Orders</span>
+            <span className="text-[10px] font-bold text-[#F8FAFC] truncate w-full text-center">
+              Live Orders
+            </span>
           </button>
 
+          {/* Action 2: Manage Menu */}
           <button
             onClick={() => setActiveScreen('menu')}
-            className="p-3 rounded-2xl bg-slate-900 hover:bg-slate-850 border border-slate-800 flex flex-col items-center justify-center text-center transition group"
+            className="bg-[#131B2E] border border-[#23304A] hover:border-blue-500/50 rounded-[16px] py-3 px-1.5 flex flex-col items-center justify-center transition group"
           >
-            <div className="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center mb-1.5 group-hover:scale-110 transition">
-              <UtensilsCrossed className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center mb-1.5 group-hover:scale-105 transition">
+              <BookOpen className="w-5 h-5 stroke-[2]" />
             </div>
-            <span className="text-xs font-bold text-slate-200">Manage Menu</span>
+            <span className="text-[10px] font-bold text-[#F8FAFC] truncate w-full text-center">
+              Menu
+            </span>
           </button>
 
+          {/* Action 3: Counter QR */}
           <button
             onClick={() => setActiveScreen('shop_qr')}
-            className="p-3 rounded-2xl bg-slate-900 hover:bg-slate-850 border border-slate-800 flex flex-col items-center justify-center text-center transition group"
+            className="bg-[#131B2E] border border-[#23304A] hover:border-purple-500/50 rounded-[16px] py-3 px-1.5 flex flex-col items-center justify-center transition group"
           >
-            <div className="w-10 h-10 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center mb-1.5 group-hover:scale-110 transition">
-              <QrCode className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-full bg-purple-500/15 text-purple-400 flex items-center justify-center mb-1.5 group-hover:scale-105 transition">
+              <QrCode className="w-5 h-5 stroke-[2]" />
             </div>
-            <span className="text-xs font-bold text-slate-200">Counter QR</span>
+            <span className="text-[10px] font-bold text-[#F8FAFC] truncate w-full text-center">
+              Shop QR
+            </span>
           </button>
 
+          {/* Action 4: Analytics */}
           <button
             onClick={() => setActiveScreen('sales')}
-            className="p-3 rounded-2xl bg-slate-900 hover:bg-slate-850 border border-slate-800 flex flex-col items-center justify-center text-center transition group"
+            className="bg-[#131B2E] border border-[#23304A] hover:border-teal-500/50 rounded-[16px] py-3 px-1.5 flex flex-col items-center justify-center transition group"
           >
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-1.5 group-hover:scale-110 transition">
-              <TrendingUp className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-full bg-teal-500/15 text-teal-400 flex items-center justify-center mb-1.5 group-hover:scale-105 transition">
+              <BarChart3 className="w-5 h-5 stroke-[2]" />
             </div>
-            <span className="text-xs font-bold text-slate-200">Sales Reports</span>
+            <span className="text-[10px] font-bold text-[#F8FAFC] truncate w-full text-center">
+              Analytics
+            </span>
           </button>
         </div>
       </div>
 
-      {/* Live Recent Orders List */}
-      <div>
+      {/* Recent Orders Section */}
+      <div className="pt-2">
         <div className="flex items-center justify-between mb-2.5">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Live Incoming Orders ({orders.length})
+          <h3 className="text-[15px] font-black text-[#F8FAFC]">
+            Recent Orders
           </h3>
           <button
             onClick={() => setActiveScreen('orders')}
-            className="text-xs font-bold text-orange-400 hover:text-orange-300 flex items-center gap-1"
+            className="text-[12px] font-bold text-[#F97316] hover:underline"
           >
-            <span>View All</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            View All
           </button>
         </div>
 
         {orders.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-slate-900 border border-slate-800 text-center">
-            <Receipt className="w-10 h-10 text-slate-600 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-300">No incoming orders yet</p>
-            <p className="text-xs text-slate-500 mt-1">Live customer orders from your Supabase database will appear here in real time</p>
+          <div className="bg-[#131B2E] border border-[#23304A] rounded-[18px] py-8 px-4 text-center">
+            <Inbox className="w-10 h-10 text-[#64748B] mx-auto mb-2" />
+            <p className="text-xs font-bold text-[#94A3B8]">No orders yet today</p>
+            <p className="text-[10px] text-[#64748B] mt-0.5">
+              New customer orders will chime here in realtime
+            </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {orders.slice(0, 4).map((order) => {
-              const statusColors: Record<string, string> = {
-                pending: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-                accepted: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-                preparing: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
-                ready: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-                completed: 'bg-slate-700/50 text-slate-400 border-slate-700',
-                cancelled: 'bg-red-500/20 text-red-400 border-red-500/40',
-              };
-
-              return (
-                <div
-                  key={order.id}
-                  className="p-4 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-750 transition shadow-sm space-y-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-white text-base">{order.orderNumber}</span>
-                        <span
-                          className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                            statusColors[order.status] || 'bg-slate-800 text-slate-300'
-                          }`}
-                        >
-                          {order.status}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-1">
-                        <span>{order.customerName}</span>
-                        <span>•</span>
-                        <span className="uppercase text-[11px] font-semibold text-slate-300">
-                          {order.orderType === 'dine_in' ? `Dine-In (Table ${order.tableNumber || '-'})` : 'Takeaway'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-base font-extrabold text-white">₹{order.totalAmount}</p>
-                      <span className="text-[10px] uppercase font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                        {order.paymentMethod} {order.paymentStatus}
-                      </span>
-                    </div>
+          <div className="space-y-2.5">
+            {orders.slice(0, 3).map((order) => (
+              <div
+                key={order.id}
+                onClick={() => setSelectedOrderId(order.id)}
+                className="bg-[#131B2E] border border-[#23304A] hover:border-[#F97316]/50 rounded-[16px] p-3.5 cursor-pointer transition flex items-center justify-between"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-white">{order.orderNumber}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#F97316]/15 text-[#F97316]">
+                      {order.status.toUpperCase()}
+                    </span>
                   </div>
-
-                  {/* Items summary */}
-                  <div className="bg-slate-950/60 rounded-xl p-2.5 text-xs text-slate-300 space-y-1">
-                    {order.items.map((i, idx) => (
-                      <div key={idx} className="flex justify-between items-center">
-                        <span className="truncate">
-                          <span className={i.isVeg ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
-                            {i.isVeg ? '🟢 ' : '🔴 '}
-                          </span>
-                          {i.quantity}x {i.name}
-                        </span>
-                        <span className="text-slate-400 shrink-0">₹{i.price * i.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Status Action Buttons */}
-                  <div className="flex items-center justify-between pt-1 gap-2">
-                    <button
-                      onClick={() => setSelectedOrderId(order.id)}
-                      className="text-xs font-semibold text-slate-400 hover:text-white underline decoration-slate-600 underline-offset-4"
-                    >
-                      Full Ticket & Notes
-                    </button>
-
-                    <div className="flex items-center gap-2">
-                      {order.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => updateOrderStatus(order.id, 'cancelled', 'Kitchen busy')}
-                            className="px-2.5 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs font-semibold"
-                          >
-                            Reject
-                          </button>
-                          <button
-                            onClick={() => updateOrderStatus(order.id, 'accepted')}
-                            className="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-md shadow-orange-950"
-                          >
-                            Accept Order
-                          </button>
-                        </>
-                      )}
-
-                      {order.status === 'accepted' && (
-                        <button
-                          onClick={() => updateOrderStatus(order.id, 'preparing')}
-                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-950"
-                        >
-                          <CookingPot className="w-3.5 h-3.5" />
-                          <span>Start Cooking</span>
-                        </button>
-                      )}
-
-                      {order.status === 'preparing' && (
-                        <button
-                          onClick={() => updateOrderStatus(order.id, 'ready')}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-950"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Mark Food Ready</span>
-                        </button>
-                      )}
-
-                      {order.status === 'ready' && (
-                        <button
-                          onClick={() => updateOrderStatus(order.id, 'completed')}
-                          className="px-3.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-md shadow-teal-950"
-                        >
-                          Handover & Complete
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <p className="text-[11px] text-[#94A3B8] mt-1">{order.customerName}</p>
                 </div>
-              );
-            })}
+                <div className="text-right">
+                  <p className="text-sm font-black text-white">₹{order.totalAmount}</p>
+                  <p className="text-[10px] text-[#64748B]">{order.items.length} items</p>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

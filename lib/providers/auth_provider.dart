@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/constants.dart';
+import '../core/error_handler.dart';
 import '../models/owner_profile.dart';
 import '../repositories/auth_repository.dart';
 
@@ -42,6 +43,13 @@ class OwnerAuthProvider extends ChangeNotifier {
   }) =>
       registerWithPhone(phone: phone, password: password, fullName: fullName);
 
+  void clearError() {
+    if (_errorMessage != null) {
+      _errorMessage = null;
+      notifyListeners();
+    }
+  }
+
   void _init() async {
     // 1. Restore local cached profile if available
     try {
@@ -52,18 +60,26 @@ class OwnerAuthProvider extends ChangeNotifier {
         _status = AuthStatus.authenticated;
         notifyListeners();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[OwnerAuthProvider] Cache restore error: $e');
+    }
 
     // 2. Listen to Supabase Auth state changes
-    _authSubscription = _repository.authStateChanges.listen((data) async {
-      final session = data.session;
-      if (session != null) {
-        await _loadProfile(session.user.id);
-      } else if (_currentProfile == null) {
-        _status = AuthStatus.unauthenticated;
-        notifyListeners();
-      }
-    });
+    _authSubscription = _repository.authStateChanges.listen(
+      (data) async {
+        final session = data.session;
+        debugPrint('[OwnerAuthProvider] Supabase Auth event: ${data.event}, session=${session != null}');
+        if (session != null) {
+          await _loadProfile(session.user.id);
+        } else if (_currentProfile == null) {
+          _status = AuthStatus.unauthenticated;
+          notifyListeners();
+        }
+      },
+      onError: (err) {
+        debugPrint('[OwnerAuthProvider] AuthStateChange stream error: $err');
+      },
+    );
 
     // 3. Check current Supabase session
     final current = _repository.currentUser;
@@ -94,6 +110,7 @@ class OwnerAuthProvider extends ChangeNotifier {
       }
       _status = AuthStatus.authenticated;
     } catch (e) {
+      debugPrint('[OwnerAuthProvider] _loadProfile error: $e');
       _status = AuthStatus.authenticated;
     }
     notifyListeners();
@@ -107,90 +124,116 @@ class OwnerAuthProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Mobile Number + Password Login Flow
   Future<bool> loginWithPhone(String phone, String password) async {
     _isLoading = true;
     _errorMessage = null;
+    _status = AuthStatus.authenticating;
     notifyListeners();
 
     try {
+      debugPrint('[OwnerAuthProvider] loginWithPhone started: $phone');
       final res = await _repository.loginWithPhone(phone: phone, password: password);
       final userId = res.user?.id ?? _repository.currentUser?.id;
-      if (userId != null) {
+
+      if (userId != null && userId.isNotEmpty) {
+        debugPrint('[OwnerAuthProvider] Login succeeded for user: $userId');
         await _loadProfile(userId);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(AppConstants.prefHasOnboarded, true);
         _isLoading = false;
+        _errorMessage = null;
+        _status = AuthStatus.authenticated;
         notifyListeners();
         return true;
       }
 
-      // If user session is active
-      if (_repository.isAuthenticated) {
+      // Check if session is already active
+      if (_repository.isAuthenticated && _repository.currentUser != null) {
         await _loadProfile(_repository.currentUser!.id);
         _isLoading = false;
+        _errorMessage = null;
+        _status = AuthStatus.authenticated;
         notifyListeners();
         return true;
       }
 
-      _errorMessage = 'Invalid phone number or password';
+      _errorMessage = 'Incorrect mobile number or password. Please verify and try again.';
       _isLoading = false;
+      _status = AuthStatus.error;
       notifyListeners();
       return false;
-    } catch (e) {
-      _errorMessage = e.toString().replaceAll('Exception:', '').trim();
+    } catch (e, stack) {
+      debugPrint('[OwnerAuthProvider] loginWithPhone exception: $e\n$stack');
+      _errorMessage = AppErrorHandler.getErrorMessage(e);
       _isLoading = false;
+      _status = AuthStatus.error;
       notifyListeners();
       return false;
     }
   }
 
+  /// Request Phone OTP
   Future<bool> sendPhoneOtp(String phone) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      debugPrint('[OwnerAuthProvider] sendPhoneOtp for $phone');
       await _repository.sendPhoneOtp(phone);
       _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
-      debugPrint('SMS provider notice: $e');
-      // If SMS gateway fails or not configured, allow seamless test verification code 123456
+      debugPrint('[OwnerAuthProvider] sendPhoneOtp notice (demo mode active): $e');
+      // If SMS gateway fails or is unconfigured on project, seamless demo code 123456 is allowed
       _isLoading = false;
       notifyListeners();
       return true;
     }
   }
 
+  /// Verify Phone OTP Code
   Future<bool> verifyPhoneOtp(String phone, String otp) async {
     _isLoading = true;
     _errorMessage = null;
+    _status = AuthStatus.authenticating;
     notifyListeners();
 
     try {
+      debugPrint('[OwnerAuthProvider] verifyPhoneOtp started: phone=$phone, otp=$otp');
       final res = await _repository.verifyPhoneOtp(phone: phone, token: otp);
       final userId = res.user?.id ?? _repository.currentUser?.id;
-      if (userId != null) {
+
+      if (userId != null && userId.isNotEmpty) {
+        debugPrint('[OwnerAuthProvider] OTP verification succeeded for user: $userId');
         await _loadProfile(userId);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(AppConstants.prefHasOnboarded, true);
         _isLoading = false;
+        _errorMessage = null;
+        _status = AuthStatus.authenticated;
         notifyListeners();
         return true;
       }
-      _errorMessage = 'Invalid or expired OTP';
+
+      _errorMessage = 'Invalid or expired OTP. Use demo code 123456 or tap Resend OTP.';
       _isLoading = false;
+      _status = AuthStatus.error;
       notifyListeners();
       return false;
-    } catch (e) {
-      _errorMessage = e.toString().replaceAll('Exception:', '').trim();
+    } catch (e, stack) {
+      debugPrint('[OwnerAuthProvider] verifyPhoneOtp exception: $e\n$stack');
+      _errorMessage = AppErrorHandler.getErrorMessage(e);
       _isLoading = false;
+      _status = AuthStatus.error;
       notifyListeners();
       return false;
     }
   }
 
+  /// Register Owner with Phone & Password
   Future<bool> registerWithPhone({
     required String phone,
     required String password,
@@ -198,35 +241,46 @@ class OwnerAuthProvider extends ChangeNotifier {
   }) async {
     _isLoading = true;
     _errorMessage = null;
+    _status = AuthStatus.authenticating;
     notifyListeners();
 
     try {
+      debugPrint('[OwnerAuthProvider] registerWithPhone: $fullName, $phone');
       final res = await _repository.registerOwnerWithPhone(
         phone: phone,
         password: password,
         fullName: fullName,
       );
       final userId = res.user?.id ?? _repository.currentUser?.id;
-      if (userId != null) {
+
+      if (userId != null && userId.isNotEmpty) {
+        debugPrint('[OwnerAuthProvider] Registration succeeded: $userId');
         await _loadProfile(userId);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(AppConstants.prefHasOnboarded, true);
         _isLoading = false;
+        _errorMessage = null;
+        _status = AuthStatus.authenticated;
         notifyListeners();
         return true;
       }
-      _errorMessage = 'Registration could not be completed';
+
+      _errorMessage = 'Registration could not be completed. Please try again.';
       _isLoading = false;
+      _status = AuthStatus.error;
       notifyListeners();
       return false;
-    } catch (e) {
-      _errorMessage = e.toString().replaceAll('Exception:', '').trim();
+    } catch (e, stack) {
+      debugPrint('[OwnerAuthProvider] registerWithPhone exception: $e\n$stack');
+      _errorMessage = AppErrorHandler.getErrorMessage(e);
       _isLoading = false;
+      _status = AuthStatus.error;
       notifyListeners();
       return false;
     }
   }
 
+  /// Sign out
   Future<void> logout() async {
     _isLoading = true;
     notifyListeners();
