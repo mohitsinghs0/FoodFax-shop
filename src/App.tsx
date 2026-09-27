@@ -49,7 +49,7 @@ const MainAppContent: React.FC = () => {
     !['splash', 'onboarding', 'login', 'register', 'shop_setup'].includes(activeScreen);
 
   return (
-    <MobileFrame isMobileFrame={false}>
+    <MobileFrame>
       {/* Top App Bar on internal screens */}
       {isInternalApp && (
         <TopAppBar

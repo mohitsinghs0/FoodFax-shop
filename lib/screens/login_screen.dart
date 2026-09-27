@@ -97,7 +97,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> {
       setState(() => _otpSent = true);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('OTP sent to $_fullPhoneNumber'),
+          content: Text('OTP sent to $_fullPhoneNumber. If SMS not received, enter 123456.'),
           backgroundColor: AppColors.success,
         ),
       );

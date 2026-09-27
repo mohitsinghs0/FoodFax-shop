@@ -55,11 +55,11 @@ export const RegisterScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center px-5 py-8 max-w-md mx-auto">
+    <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] flex flex-col justify-center px-6 py-8 max-w-md mx-auto select-none">
       {/* Back Button */}
       <button
         onClick={() => setActiveScreen('login')}
-        className="self-start mb-4 p-2 -ml-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-900 transition flex items-center gap-1.5 text-xs font-semibold"
+        className="self-start mb-4 p-2 -ml-2 rounded-xl text-[#94A3B8] hover:text-white hover:bg-[#131B2E] transition flex items-center gap-1.5 text-xs font-semibold"
       >
         <ArrowLeft className="w-4 h-4" />
         <span>Back to Login</span>
@@ -67,11 +67,11 @@ export const RegisterScreen: React.FC = () => {
 
       {/* Brand Header */}
       <div className="mb-6">
-        <div className="w-12 h-12 rounded-2xl bg-orange-600 flex items-center justify-center mb-3 shadow-lg shadow-orange-600/30">
-          <Store className="w-6 h-6 text-white" />
+        <div className="w-14 h-14 rounded-2xl bg-[#F97316] flex items-center justify-center mb-3.5 shadow-lg shadow-orange-950/40">
+          <Store className="w-7 h-7 text-white" />
         </div>
         <h2 className="text-2xl font-black text-white tracking-tight">Register Restaurant</h2>
-        <p className="text-slate-400 text-xs mt-1">
+        <p className="text-[#94A3B8] text-xs mt-1">
           Create an owner account using your verified mobile number to list your restaurant and manage live orders
         </p>
       </div>
@@ -87,11 +87,11 @@ export const RegisterScreen: React.FC = () => {
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         {/* Full Name */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+          <label className="block text-xs font-bold text-[#94A3B8] mb-1.5">
             Owner Full Name
           </label>
           <div className="relative">
-            <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <User className="w-4 h-4 text-[#64748B] absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={fullName}
@@ -102,9 +102,9 @@ export const RegisterScreen: React.FC = () => {
                 }
               }}
               placeholder="e.g. Vikram Malhotra"
-              className={`w-full bg-slate-900 border ${
-                fieldErrors['fullName'] ? 'border-red-500 focus:border-red-500' : 'border-slate-800 focus:border-orange-500'
-              } rounded-xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder-slate-600 outline-none transition`}
+              className={`w-full bg-[#131B2E] border ${
+                fieldErrors['fullName'] ? 'border-red-500' : 'border-[#23304A] focus:border-[#F97316]'
+              } rounded-xl pl-10 pr-4 py-3 text-sm text-[#F8FAFC] placeholder-[#64748B] outline-none transition font-medium`}
               required
             />
           </div>
@@ -118,16 +118,16 @@ export const RegisterScreen: React.FC = () => {
 
         {/* Mobile Number */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+          <label className="block text-xs font-bold text-[#94A3B8] mb-1.5">
             Owner Mobile Number
           </label>
           <div className="flex gap-2">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-3 flex items-center gap-1.5 text-xs font-bold text-slate-200 shrink-0">
+            <div className="bg-[#131B2E] border border-[#23304A] rounded-xl px-3 py-3 flex items-center gap-1.5 text-xs font-bold text-white shrink-0">
               <span>🇮🇳</span>
               <span>{countryCode}</span>
             </div>
             <div className="relative flex-1">
-              <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Phone className="w-4 h-4 text-[#64748B] absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="tel"
                 value={phoneNumber}
@@ -139,9 +139,9 @@ export const RegisterScreen: React.FC = () => {
                 }}
                 maxLength={10}
                 placeholder="98450 12345"
-                className={`w-full bg-slate-900 border ${
-                  fieldErrors['phone'] ? 'border-red-500 focus:border-red-500' : 'border-slate-800 focus:border-orange-500'
-                } rounded-xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder-slate-600 outline-none transition tracking-wide font-medium`}
+                className={`w-full bg-[#131B2E] border ${
+                  fieldErrors['phone'] ? 'border-red-500' : 'border-[#23304A] focus:border-[#F97316]'
+                } rounded-xl pl-10 pr-4 py-3 text-sm text-[#F8FAFC] placeholder-[#64748B] outline-none transition tracking-wide font-medium`}
                 required
               />
             </div>
@@ -152,17 +152,17 @@ export const RegisterScreen: React.FC = () => {
               {fieldErrors['phone']}
             </p>
           ) : (
-            <p className="text-[10px] text-slate-500 mt-1">Must be a valid 10-digit Indian mobile number</p>
+            <p className="text-[10px] text-[#64748B] mt-1">Must be a valid 10-digit Indian mobile number</p>
           )}
         </div>
 
         {/* Password */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+          <label className="block text-xs font-bold text-[#94A3B8] mb-1.5">
             Security Password / PIN
           </label>
           <div className="relative">
-            <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Lock className="w-4 h-4 text-[#64748B] absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type={showPassword ? 'text' : 'password'}
               value={password}
@@ -173,15 +173,15 @@ export const RegisterScreen: React.FC = () => {
                 }
               }}
               placeholder="Min. 6 characters"
-              className={`w-full bg-slate-900 border ${
-                fieldErrors['password'] ? 'border-red-500 focus:border-red-500' : 'border-slate-800 focus:border-orange-500'
-              } rounded-xl pl-10 pr-10 py-3 text-sm text-slate-100 placeholder-slate-600 outline-none transition`}
+              className={`w-full bg-[#131B2E] border ${
+                fieldErrors['password'] ? 'border-red-500' : 'border-[#23304A] focus:border-[#F97316]'
+              } rounded-xl pl-10 pr-10 py-3 text-sm text-[#F8FAFC] placeholder-[#64748B] outline-none transition font-medium`}
               required
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-white"
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -196,11 +196,11 @@ export const RegisterScreen: React.FC = () => {
 
         {/* Confirm Password */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+          <label className="block text-xs font-bold text-[#94A3B8] mb-1.5">
             Confirm Password / PIN
           </label>
           <div className="relative">
-            <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Lock className="w-4 h-4 text-[#64748B] absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type={showPassword ? 'text' : 'password'}
               value={confirmPassword}
@@ -211,9 +211,9 @@ export const RegisterScreen: React.FC = () => {
                 }
               }}
               placeholder="Re-enter password"
-              className={`w-full bg-slate-900 border ${
-                fieldErrors['confirmPassword'] ? 'border-red-500 focus:border-red-500' : 'border-slate-800 focus:border-orange-500'
-              } rounded-xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder-slate-600 outline-none transition`}
+              className={`w-full bg-[#131B2E] border ${
+                fieldErrors['confirmPassword'] ? 'border-red-500' : 'border-[#23304A] focus:border-[#F97316]'
+              } rounded-xl pl-10 pr-4 py-3 text-sm text-[#F8FAFC] placeholder-[#64748B] outline-none transition font-medium`}
               required
             />
           </div>
@@ -228,7 +228,7 @@ export const RegisterScreen: React.FC = () => {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full mt-2 py-3.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-orange-600/30 transition disabled:opacity-50"
+          className="w-full mt-2 py-3.5 rounded-xl bg-[#F97316] hover:bg-[#EA580C] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-orange-950/40 transition disabled:opacity-50"
         >
           {isLoading ? (
             <>
@@ -242,11 +242,11 @@ export const RegisterScreen: React.FC = () => {
       </form>
 
       {/* Switch to Login */}
-      <div className="mt-8 text-center text-xs text-slate-400">
+      <div className="mt-8 text-center text-xs text-[#94A3B8]">
         Already have a shop account?{' '}
         <button
           onClick={() => setActiveScreen('login')}
-          className="text-orange-400 font-bold hover:underline"
+          className="text-[#F97316] font-bold hover:underline"
         >
           Sign In
         </button>

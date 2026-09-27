@@ -3,46 +3,39 @@ import { Wifi, Battery, Signal } from 'lucide-react';
 
 interface MobileFrameProps {
   children: React.ReactNode;
-  isMobileFrame: boolean;
+  isMobileFrame?: boolean;
 }
 
-export const MobileFrame: React.FC<MobileFrameProps> = ({ children, isMobileFrame }) => {
-  if (!isMobileFrame) {
-    return <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">{children}</div>;
-  }
-
-  const now = new Date();
-  const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
+export const MobileFrame: React.FC<MobileFrameProps> = ({ children }) => {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-2 sm:p-6 lg:p-10">
-      {/* Smartphone Chassis */}
-      <div className="relative w-full max-w-[440px] h-[92vh] max-h-[920px] bg-slate-900 border-[8px] sm:border-[12px] border-slate-800 rounded-[44px] shadow-2xl overflow-hidden flex flex-col ring-1 ring-slate-700/50">
-        {/* Device Status Bar */}
-        <div className="bg-slate-900/90 backdrop-blur-sm px-6 pt-2 pb-1 flex items-center justify-between text-[11px] font-bold text-slate-300 select-none shrink-0 z-40">
-          <span>{timeString}</span>
-
-          {/* Speaker / Camera Notch */}
-          <div className="w-24 h-4 bg-slate-950 rounded-full flex items-center justify-center gap-1.5 shadow-inner">
-            <div className="w-2 h-2 rounded-full bg-slate-800" />
-            <div className="w-8 h-1.5 rounded-full bg-slate-900" />
+    <div className="min-h-screen bg-[#050811] text-[#F8FAFC] flex items-center justify-center p-0 sm:p-4 md:p-8">
+      {/* Smartphone Chassis - exact match to Android Mobile Device */}
+      <div className="relative w-full max-w-[430px] h-screen sm:h-[94vh] sm:max-h-[920px] bg-[#0B0F19] sm:border-[10px] sm:border-[#1E293B] sm:rounded-[48px] shadow-2xl sm:shadow-[0_25px_60px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col sm:ring-1 sm:ring-slate-700/50">
+        {/* Device Status Bar matching the screenshot */}
+        <div className="bg-[#0B0F19] px-6 pt-3 pb-1.5 flex items-center justify-between text-[11px] font-semibold text-[#94A3B8] select-none shrink-0 z-40 border-b border-[#131B2E]/40">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-white">7:20</span>
           </div>
 
-          <div className="flex items-center gap-1.5 text-slate-400">
-            <Signal className="w-3 h-3 text-slate-300" />
-            <Wifi className="w-3 h-3 text-slate-300" />
-            <Battery className="w-3.5 h-3.5 text-slate-300" />
+          <div className="flex items-center gap-2 text-[#94A3B8]">
+            <span className="text-[10px] text-slate-400">0.37 KB/s</span>
+            <Signal className="w-3.5 h-3.5 text-slate-300" />
+            <Wifi className="w-3.5 h-3.5 text-slate-300" />
+            <div className="flex items-center gap-0.5 text-emerald-400">
+              <span className="text-[10px] font-bold text-slate-300">52%</span>
+              <Battery className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400" />
+            </div>
           </div>
         </div>
 
-        {/* Screen Content Container */}
-        <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col relative bg-slate-950">
+        {/* Screen Content Container with smooth scrollbar */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col relative bg-[#0B0F19]">
           {children}
         </div>
 
-        {/* Home Bar Indicator */}
-        <div className="bg-slate-900/90 py-1.5 flex justify-center shrink-0 z-40">
-          <div className="w-28 h-1 bg-slate-600 rounded-full" />
+        {/* Android Navigation / Home Pill Bar Indicator */}
+        <div className="bg-[#0B0F19] py-2 flex justify-center shrink-0 z-40">
+          <div className="w-32 h-1 bg-[#334155] rounded-full" />
         </div>
       </div>
     </div>

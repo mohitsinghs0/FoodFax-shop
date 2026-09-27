@@ -3,7 +3,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AppErrorHandler {
   static String getErrorMessage(dynamic error) {
-    if (error is AuthException) {
+    if (error == null) {
+      return 'An unexpected error occurred. Please try again.';
+    }
+    if (error is String) {
+      final clean = error.replaceAll('Exception:', '').replaceAll('AuthException:', '').trim();
+      return clean.isNotEmpty ? clean : 'An unexpected error occurred. Please try again.';
+    } else if (error is AuthException) {
       return error.message;
     } else if (error is PostgrestException) {
       return error.message;
