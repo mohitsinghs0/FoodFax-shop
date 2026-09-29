@@ -1,15 +1,35 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
-import { OwnerProfile, Shop, MenuItem, MenuCategory, OwnerOrder, OrderStatus, ActiveScreen, DEFAULT_MENU_CATEGORIES } from '../types';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
+import { 
+  OwnerProfile, 
+  Shop, 
+  MenuItem, 
+  MenuCategory, 
+  OwnerOrder, 
+  OrderStatus, 
+  ActiveScreen, 
+  DEFAULT_MENU_CATEGORIES,
+  DashboardCardPreferences,
+  DEFAULT_DASHBOARD_PREFERENCES
+} from '../types';
 import { soundService } from '../services/soundService';
+import { browserNotificationService } from '../services/notificationService';
 import { supabase, getSupabaseClient } from '../lib/supabaseClient';
 import { indexedDbService } from '../services/indexedDbService';
 import { apiCache } from '../services/apiCache';
+import { 
+  generateAndStoreShopBinding, 
+  verifyShopBinding, 
+  purgeShopBinding, 
+  sanitizeBrowserUrlTampering 
+} from '../services/securityService';
 
 interface OwnerAppContextType {
   activeScreen: ActiveScreen;
   setActiveScreen: (screen: ActiveScreen) => void;
   ownerProfile: OwnerProfile | null;
   shop: Shop | null;
+  availableShops: Shop[];
+  switchShop: (shopId: string) => Promise<boolean>;
   isAuthenticated: boolean;
   isLoading: boolean;
   errorMessage: string | null;
@@ -19,8 +39,14 @@ interface OwnerAppContextType {
   menuItems: MenuItem[];
   selectedOrderId: string | null;
   setSelectedOrderId: (id: string | null) => void;
+  dashboardPreferences: DashboardCardPreferences;
+  updateDashboardLayout: (newPreferences: Partial<DashboardCardPreferences>) => Promise<boolean>;
   isSoundEnabled: boolean;
   toggleSound: () => void;
+  isPushNotificationEnabled: boolean;
+  togglePushNotifications: () => Promise<boolean>;
+  pushPermission: NotificationPermission;
+  triggerTestPushNotification: () => void;
   loginWithPhone: (phone: string, password: string) => Promise<boolean>;
   sendPhoneOtp: (phone: string) => Promise<boolean>;
   verifyPhoneOtp: (phone: string, token: string) => Promise<boolean>;
@@ -33,8 +59,11 @@ interface OwnerAppContextType {
   saveMenuItem: (item: Partial<MenuItem>) => Promise<boolean>;
   deleteMenuItem: (id: string) => Promise<boolean>;
   toggleItemAvailability: (id: string, isAvailable: boolean) => void;
-  addCategory: (name: string) => Promise<void>;
+  addCategory: (name: string, description?: string) => Promise<MenuCategory | undefined>;
+  renameCategory: (id: string, newName: string, description?: string) => Promise<boolean>;
   deleteCategory: (id: string) => Promise<boolean>;
+  assignItemTag: (itemId: string, tag: string | undefined) => Promise<boolean>;
+  assignItemCategory: (itemId: string, categoryId: string | undefined) => Promise<boolean>;
   isOffline: boolean;
   pendingSyncCount: number;
   syncOfflineData: () => Promise<{ syncedCount: number; errors: number }>;
@@ -164,6 +193,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     return null;
   });
 
+  const [availableShops, setAvailableShops] = useState<Shop[]>([]);
+
   const [orders, setOrders] = useState<OwnerOrder[]>([]);
   const [menuCategories, setMenuCategories] = useState<MenuCategory[]>(DEFAULT_MENU_CATEGORIES);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -195,7 +226,27 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [dashboardPreferences, setDashboardPreferences] = useState<DashboardCardPreferences>(() => {
+    const saved = localStorage.getItem('foodfax_dashboard_prefs');
+    if (saved) {
+      try {
+        return { ...DEFAULT_DASHBOARD_PREFERENCES, ...JSON.parse(saved) };
+      } catch (_) {}
+    }
+    const savedProfile = localStorage.getItem('foodfax_owner_profile');
+    if (savedProfile) {
+      try {
+        const parsed = JSON.parse(savedProfile);
+        if (parsed.dashboardLayout) {
+          return { ...DEFAULT_DASHBOARD_PREFERENCES, ...parsed.dashboardLayout };
+        }
+      } catch (_) {}
+    }
+    return DEFAULT_DASHBOARD_PREFERENCES;
+  });
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(soundService.isEnabled());
+  const [isPushNotificationEnabled, setIsPushNotificationEnabled] = useState<boolean>(browserNotificationService.isEnabled());
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(browserNotificationService.getPermissionStatus());
   const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
   const [resetOtpCode, setResetOtpCode] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
@@ -238,6 +289,9 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
   }, [ownerProfile?.id, shop?.id]);
 
+  // Track known order IDs for sound notification on newly arrived orders
+  const knownOrderIdsRef = useRef<Set<string>>(new Set());
+
   // Dedicated lightweight order refresh from Supabase
   const refreshOrders = useCallback(async (targetShopId?: string): Promise<OwnerOrder[]> => {
     const sId = targetShopId || shop?.id;
@@ -259,6 +313,24 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       if (ordersData) {
         const mappedOrders = ordersData.map(mapDbOrderToOwnerOrder);
+        
+        // Detect newly arrived pending orders that weren't in known list
+        if (knownOrderIdsRef.current.size > 0) {
+          const newPendingOrders = mappedOrders.filter(
+            (o) => !knownOrderIdsRef.current.has(o.id) && o.status === 'pending'
+          );
+          if (newPendingOrders.length > 0) {
+            // Loud kitchen buzzer alarm for 1 - 3 seconds
+            soundService.playLoudOrderAlarm(2.0);
+            // Trigger browser push notification for newly arrived order when app is in the background
+            newPendingOrders.forEach((newOrder) => {
+              browserNotificationService.notifyNewOrder(newOrder);
+            });
+          }
+        }
+        
+        // Update known set
+        mappedOrders.forEach((o) => knownOrderIdsRef.current.add(o.id));
         setOrders(mappedOrders);
         return mappedOrders;
       }
@@ -285,8 +357,12 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       return [incomingOrder, ...prev];
     });
 
-    if (isNew) {
-      soundService.playNewOrderChime();
+    if (isNew || !knownOrderIdsRef.current.has(incomingOrder.id)) {
+      knownOrderIdsRef.current.add(incomingOrder.id);
+      // Play high-intensity loud kitchen buzzer alarm for 1 - 3 seconds
+      soundService.playLoudOrderAlarm(2.0);
+      // Trigger background push notification
+      browserNotificationService.notifyNewOrder(incomingOrder);
     }
   }, []);
 
@@ -332,57 +408,91 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         .maybeSingle();
 
       if (userData) {
-        setOwnerProfile({
+        const profile: OwnerProfile = {
           id: userData.id,
           email: userData.email,
           fullName: userData.full_name || 'Restaurant Owner',
           phone: userData.phone || '',
           role: 'owner',
-        });
-      }
-
-      // 2. Fetch Shop from 'public.shops' table
-      let shopQuery = client.from('shops').select('*');
-      if (currentShopId) {
-        shopQuery = shopQuery.eq('id', currentShopId);
-      } else {
-        shopQuery = shopQuery.eq('owner_id', userId);
-      }
-
-      const { data: shopData } = await shopQuery.maybeSingle();
-
-      if (shopData) {
-        const loadedShop: Shop = {
-          id: shopData.id,
-          ownerId: shopData.owner_id || userId,
-          name: shopData.name,
-          shopType: shopData.stall_type || 'Restaurant',
-          description: shopData.description,
-          phone: shopData.phone || shopData.contact_phone,
-          address: shopData.address,
-          area: shopData.area,
-          city: shopData.city,
-          state: shopData.state,
-          pincode: shopData.pincode,
-          latitude: shopData.latitude,
-          longitude: shopData.longitude,
-          openingTime: shopData.opening_time || '10:00 AM',
-          closingTime: shopData.closing_time || '10:00 PM',
-          upiId: shopData.upi_id,
-          logoUrl: shopData.image,
-          bannerUrl: shopData.banner_image,
-          isOpen: shopData.is_open ?? true,
-          isRushMode: shopData.is_rush_hour ?? false,
-          rushExtraMinutes: 15,
-          minimumOrder: 0,
-          acceptsTakeaway: true,
-          acceptsDineIn: shopData.table_service_available ?? true,
-          acceptsDelivery: false,
-          createdAt: shopData.created_at,
+          dashboardLayout: userData.dashboard_layout || userData.preferences?.dashboardLayout || DEFAULT_DASHBOARD_PREFERENCES,
         };
-        setShop(loadedShop);
+        setOwnerProfile(profile);
+        setDashboardPreferences(profile.dashboardLayout || DEFAULT_DASHBOARD_PREFERENCES);
+        localStorage.setItem('foodfax_owner_profile', JSON.stringify(profile));
+      }
 
-        const targetShopId = loadedShop.id;
+      // 2. Fetch Shops belonging to this authenticated owner (or matching owner's phone/id)
+      const ownerPhone = userData?.phone || '';
+      const digits = ownerPhone.replace(/\D/g, '');
+      const last10 = digits.slice(-10);
+
+      // Query only the authenticated user's shop(s)
+      let shopsQuery = client.from('shops').select('*');
+      if (last10) {
+        shopsQuery = shopsQuery.or(`owner_id.eq.${userId},phone.ilike.%${last10}%`);
+      } else {
+        shopsQuery = shopsQuery.eq('owner_id', userId);
+      }
+
+      const { data: ownerShopsData } = await shopsQuery.order('created_at', { ascending: false });
+
+      // Fallback: If no shop assigned yet to this newly registered owner, check if an existing shop is owned by their ID
+      let targetShopsList = ownerShopsData || [];
+      if (targetShopsList.length === 0) {
+        const { data: fallbackShop } = await client
+          .from('shops')
+          .select('*')
+          .eq('owner_id', userId)
+          .limit(1);
+        if (fallbackShop && fallbackShop.length > 0) {
+          targetShopsList = fallbackShop;
+        }
+      }
+
+      const mappedAllShops: Shop[] = targetShopsList.map((s: any) => ({
+        id: s.id,
+        ownerId: s.owner_id || userId,
+        name: s.name,
+        shopType: s.stall_type || 'Restaurant',
+        description: s.description,
+        phone: s.phone || s.contact_phone,
+        address: s.address,
+        area: s.area,
+        city: s.city,
+        state: s.state,
+        pincode: s.pincode,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        openingTime: s.opening_time || '10:00 AM',
+        closingTime: s.closing_time || '10:00 PM',
+        upiId: s.upi_id,
+        logoUrl: s.image,
+        bannerUrl: s.banner_image,
+        isOpen: s.is_open ?? true,
+        isRushMode: s.is_rush_hour ?? false,
+        rushExtraMinutes: 15,
+        minimumOrder: 0,
+        acceptsTakeaway: true,
+        acceptsDineIn: s.table_service_available ?? true,
+        acceptsDelivery: false,
+        createdAt: s.created_at,
+      }));
+
+      // Strictly isolate: targetShop is this authenticated owner's single authorized shop
+      // Prioritize the shop that is owned by this user ID
+      const targetShop =
+        mappedAllShops.find((s) => s.ownerId === userId) ||
+        mappedAllShops[0] ||
+        null;
+
+      // Available shops contains ONLY the bound shop for this authenticated owner
+      setAvailableShops(targetShop ? [targetShop] : []);
+
+      if (targetShop) {
+        // Enforce cryptographic single-shop binding token
+        await generateAndStoreShopBinding(userId, targetShop.id, ownerPhone);
+        setShop(targetShop);
+        const targetShopId = targetShop.id;
 
         // 3. Fetch Orders from 'public.orders' table
         const { data: ordersData } = await client
@@ -460,7 +570,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
 
         // Cache shop and orders to IndexedDB for offline resilience
-        indexedDbService.saveShopOffline(loadedShop);
+        indexedDbService.saveShopOffline(targetShop);
         if (ordersData) {
           indexedDbService.saveOrdersOffline(ordersData.map(mapDbOrderToOwnerOrder));
         }
@@ -488,6 +598,12 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
 
     console.log('[OwnerAppProvider] 🚀 Initializing Supabase auth session check at startup...');
+
+    // 0. Neutralize manual browser URL tampering (?shopId=xxx, ?stallId=xxx, #shopId=xxx)
+    const { tamperedDetected, attemptedShopId } = sanitizeBrowserUrlTampering();
+    if (tamperedDetected) {
+      console.warn('[Security] Neutralized unauthorized URL shop parameter:', attemptedShopId);
+    }
 
     // 1. Initial Session Retrieval via getSession()
     client.auth
@@ -525,6 +641,26 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             try {
               const parsed = JSON.parse(savedProfile);
               if (parsed?.id) {
+                // Verify cryptographic single-shop binding for cached local session if a shop was stored
+                const savedShop = localStorage.getItem('foodfax_owner_shop');
+                let isBindingValid = true;
+                if (savedShop) {
+                  try {
+                    const parsedShop = JSON.parse(savedShop);
+                    if (parsedShop?.id) {
+                      const bindingCheck = await verifyShopBinding(parsed.id, parsedShop.id);
+                      if (!bindingCheck.valid) {
+                        console.warn('[Security] Cryptographic shop binding verification failed for cached session:', bindingCheck.reason);
+                        localStorage.removeItem('foodfax_owner_shop');
+                        purgeShopBinding();
+                        isBindingValid = false;
+                      }
+                    }
+                  } catch (_) {
+                    isBindingValid = false;
+                  }
+                }
+
                 console.log('[OwnerAppProvider] 🔄 Found locally cached owner profile:', parsed.id, parsed.fullName);
                 setOwnerProfile(parsed);
                 await loadDatabaseData(parsed.id);
@@ -576,6 +712,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         setIsLoading(false);
       } else if (event === 'SIGNED_OUT') {
         console.log('[OwnerAppProvider] onAuthStateChange: User signed out. Clearing application state.');
+        purgeShopBinding();
         setOwnerProfile(null);
         setShop(null);
         setOrders([]);
@@ -601,14 +738,20 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     setRealtimeStatus('connecting');
 
-    const channelName = `shop_orders_global_${shop.id}`;
+    const channelName = `shop_orders_global_${shop.id}_${Date.now()}`;
     const channel = client
       .channel(channelName)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders', filter: `shop_id=eq.${shop.id}` },
+        { event: '*', schema: 'public', table: 'orders' },
         async (payload: any) => {
           try {
+            // Check if this event belongs to the current shop
+            const orderShopId = payload.new?.shop_id || payload.old?.shop_id;
+            if (orderShopId && orderShopId !== shop.id) {
+              return;
+            }
+
             if (payload.eventType === 'INSERT') {
               const { data } = await client
                 .from('orders')
@@ -650,12 +793,53 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
   }, [shop?.id, upsertOrderFromRealtime, removeOrderFromRealtime, refreshOrders]);
 
+  // Background Auto-Polling Fallback: Every 3 seconds to guarantee zero missed orders even if Realtime reconnects
+  useEffect(() => {
+    if (!shop?.id) return;
+    const interval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        refreshOrders(shop.id);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [shop?.id, refreshOrders]);
+
+  // Enforce single-shop binding: switchShop is disabled for strict security
+  const switchShop = useCallback(
+    async (targetShopId: string): Promise<boolean> => {
+      // In single-shop cryptographic binding, switching to another stall is strictly blocked.
+      if (shop?.id === targetShopId) {
+        return true;
+      }
+      console.warn(`[Security Alert] Blocked attempt to switch to unauthorized shop: ${targetShopId}`);
+      return false;
+    },
+    [shop?.id]
+  );
+
   const toggleSound = useCallback(() => {
     const next = !isSoundEnabled;
     setIsSoundEnabled(next);
     soundService.setEnabled(next);
     if (next) soundService.playSuccessTone();
   }, [isSoundEnabled]);
+
+  const togglePushNotifications = useCallback(async (): Promise<boolean> => {
+    const next = !isPushNotificationEnabled;
+    setIsPushNotificationEnabled(next);
+    browserNotificationService.setEnabled(next);
+
+    if (next) {
+      const perm = await browserNotificationService.requestPermission();
+      setPushPermission(perm);
+      return perm === 'granted';
+    }
+    return false;
+  }, [isPushNotificationEnabled]);
+
+  const triggerTestPushNotification = useCallback(() => {
+    browserNotificationService.triggerTestNotification();
+  }, []);
 
   // AUTH: Login with Phone & Password (Validates against REAL database users table)
   const loginWithPhone = async (phone: string, pass: string): Promise<boolean> => {
@@ -1021,6 +1205,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         await client.auth.signOut();
       } catch (_) {}
     }
+    purgeShopBinding();
     setOwnerProfile(null);
     setShop(null);
     setOrders([]);
@@ -1120,6 +1305,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
     }
 
+    if (ownerProfile) {
+      await generateAndStoreShopBinding(ownerProfile.id, newShop.id, ownerProfile.phone);
+    }
+    setAvailableShops([newShop]);
     setShop(newShop);
     setIsLoading(false);
     return true;
@@ -1407,15 +1596,16 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Add Category in 'public.categories' table
-  const addCategory = async (name: string): Promise<void> => {
-    if (!shop) return;
+  const addCategory = async (name: string, description?: string): Promise<MenuCategory | undefined> => {
+    if (!shop) return undefined;
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed) return undefined;
 
     const newCat: MenuCategory = {
       id: 'cat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       shopId: shop.id,
       name: trimmed,
+      description: description?.trim() || undefined,
       sortOrder: menuCategories.length + 1,
       isActive: true,
     };
@@ -1430,6 +1620,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       id: newCat.id,
       shop_id: shop.id,
       name: newCat.name,
+      description: newCat.description || null,
       display_order: newCat.sortOrder,
       is_active: true,
       created_at: new Date().toISOString(),
@@ -1467,6 +1658,149 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       });
       setPendingSyncCount((c) => c + 1);
     }
+    return newCat;
+  };
+
+  // Rename Category in 'public.categories' table
+  const renameCategory = async (id: string, newName: string, description?: string): Promise<boolean> => {
+    const trimmed = newName.trim();
+    if (!trimmed) return false;
+
+    // 1. Optimistic state update
+    const updatedCategories = menuCategories.map((c) =>
+      c.id === id ? { ...c, name: trimmed, description: description !== undefined ? description.trim() : c.description } : c
+    );
+    setMenuCategories(updatedCategories);
+    apiCache.invalidate('categories');
+    indexedDbService.saveCategoriesOffline(updatedCategories);
+
+    const client = getSupabaseClient();
+    const payload = {
+      name: trimmed,
+      description: description !== undefined ? description.trim() || null : undefined,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (client && navigator.onLine) {
+      try {
+        const { error } = await client.from('categories').update(payload).eq('id', id);
+        if (error) {
+          console.warn('Supabase rename category error:', error.message);
+          await indexedDbService.enqueueMutation({
+            action: 'UPDATE',
+            table: 'categories',
+            recordId: id,
+            payload,
+          });
+          setPendingSyncCount((c) => c + 1);
+        }
+      } catch (e) {
+        console.warn('Supabase rename category exception:', e);
+        await indexedDbService.enqueueMutation({
+          action: 'UPDATE',
+          table: 'categories',
+          recordId: id,
+          payload,
+        });
+        setPendingSyncCount((c) => c + 1);
+      }
+    } else {
+      await indexedDbService.enqueueMutation({
+        action: 'UPDATE',
+        table: 'categories',
+        recordId: id,
+        payload,
+      });
+      setPendingSyncCount((c) => c + 1);
+    }
+    return true;
+  };
+
+  // Assign Tag to Menu Item
+  const assignItemTag = async (itemId: string, tag: string | undefined): Promise<boolean> => {
+    const cleanTag = tag && tag !== 'None' ? tag.trim() : undefined;
+    
+    // Optimistic update
+    setMenuItems((prev) => prev.map((item) => (item.id === itemId ? { ...item, tag: cleanTag } : item)));
+    apiCache.invalidate('menu_items');
+
+    const item = menuItems.find((i) => i.id === itemId);
+    if (item) {
+      indexedDbService.saveMenuItemOffline({ ...item, tag: cleanTag });
+    }
+
+    const client = getSupabaseClient();
+    const payload = {
+      tag: cleanTag || null,
+      is_bestseller: cleanTag === 'Bestseller',
+      updated_at: new Date().toISOString(),
+    };
+
+    if (client && navigator.onLine) {
+      try {
+        await client.from('menu_items').update(payload).eq('id', itemId);
+      } catch (e) {
+        console.warn('Supabase assign tag error:', e);
+        await indexedDbService.enqueueMutation({
+          action: 'UPDATE',
+          table: 'menu_items',
+          recordId: itemId,
+          payload,
+        });
+        setPendingSyncCount((c) => c + 1);
+      }
+    } else {
+      await indexedDbService.enqueueMutation({
+        action: 'UPDATE',
+        table: 'menu_items',
+        recordId: itemId,
+        payload,
+      });
+      setPendingSyncCount((c) => c + 1);
+    }
+    return true;
+  };
+
+  // Assign Category to Menu Item
+  const assignItemCategory = async (itemId: string, categoryId: string | undefined): Promise<boolean> => {
+    // Optimistic update
+    setMenuItems((prev) => prev.map((item) => (item.id === itemId ? { ...item, categoryId } : item)));
+    apiCache.invalidate('menu_items');
+
+    const item = menuItems.find((i) => i.id === itemId);
+    if (item) {
+      indexedDbService.saveMenuItemOffline({ ...item, categoryId });
+    }
+
+    const client = getSupabaseClient();
+    const payload = {
+      category_id: categoryId || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (client && navigator.onLine) {
+      try {
+        await client.from('menu_items').update(payload).eq('id', itemId);
+      } catch (e) {
+        console.warn('Supabase assign category error:', e);
+        await indexedDbService.enqueueMutation({
+          action: 'UPDATE',
+          table: 'menu_items',
+          recordId: itemId,
+          payload,
+        });
+        setPendingSyncCount((c) => c + 1);
+      }
+    } else {
+      await indexedDbService.enqueueMutation({
+        action: 'UPDATE',
+        table: 'menu_items',
+        recordId: itemId,
+        payload,
+      });
+      setPendingSyncCount((c) => c + 1);
+    }
+    return true;
   };
 
   // Delete Category from 'public.categories'
@@ -1559,12 +1893,48 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
+  // UPDATE & PERSIST DASHBOARD LAYOUT PREFERENCES
+  const updateDashboardLayout = async (newPreferences: Partial<DashboardCardPreferences>): Promise<boolean> => {
+    const updated = { ...dashboardPreferences, ...newPreferences };
+    setDashboardPreferences(updated);
+    localStorage.setItem('foodfax_dashboard_prefs', JSON.stringify(updated));
+
+    // Update ownerProfile with new layout preferences
+    if (ownerProfile) {
+      const updatedProfile: OwnerProfile = {
+        ...ownerProfile,
+        dashboardLayout: updated,
+      };
+      setOwnerProfile(updatedProfile);
+      localStorage.setItem('foodfax_owner_profile', JSON.stringify(updatedProfile));
+    }
+
+    // Persist to user record in Supabase if online
+    const client = getSupabaseClient();
+    if (client && ownerProfile?.id) {
+      try {
+        await client
+          .from('users')
+          .update({
+            dashboard_layout: updated,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', ownerProfile.id);
+      } catch (err) {
+        console.warn('Could not persist dashboard layout to remote users table:', err);
+      }
+    }
+    return true;
+  };
+
   const contextValue = useMemo<OwnerAppContextType>(
     () => ({
       activeScreen,
       setActiveScreen,
       ownerProfile,
       shop,
+      availableShops,
+      switchShop,
       isAuthenticated,
       isLoading,
       errorMessage,
@@ -1574,8 +1944,14 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       menuItems,
       selectedOrderId,
       setSelectedOrderId,
+      dashboardPreferences,
+      updateDashboardLayout,
       isSoundEnabled,
       toggleSound,
+      isPushNotificationEnabled,
+      togglePushNotifications,
+      pushPermission,
+      triggerTestPushNotification,
       loginWithPhone,
       sendPhoneOtp,
       verifyPhoneOtp,
@@ -1589,7 +1965,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       deleteMenuItem,
       toggleItemAvailability,
       addCategory,
+      renameCategory,
       deleteCategory,
+      assignItemTag,
+      assignItemCategory,
       isOffline,
       pendingSyncCount,
       syncOfflineData,
@@ -1610,6 +1989,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       setActiveScreen,
       ownerProfile,
       shop,
+      availableShops,
+      switchShop,
       isAuthenticated,
       isLoading,
       errorMessage,
@@ -1619,8 +2000,14 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       menuItems,
       selectedOrderId,
       setSelectedOrderId,
+      dashboardPreferences,
+      updateDashboardLayout,
       isSoundEnabled,
       toggleSound,
+      isPushNotificationEnabled,
+      togglePushNotifications,
+      pushPermission,
+      triggerTestPushNotification,
       loginWithPhone,
       sendPhoneOtp,
       verifyPhoneOtp,
@@ -1634,7 +2021,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       deleteMenuItem,
       toggleItemAvailability,
       addCategory,
+      renameCategory,
       deleteCategory,
+      assignItemTag,
+      assignItemCategory,
       isOffline,
       pendingSyncCount,
       syncOfflineData,

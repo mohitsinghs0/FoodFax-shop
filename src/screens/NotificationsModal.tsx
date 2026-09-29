@@ -23,18 +23,35 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ onClose 
           </button>
         </div>
 
-        {/* Chime Test Action */}
+        {/* Chime & Fanfare Test Action */}
         <div className="p-3 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-orange-200">
-            <Volume2 className="w-4 h-4 text-orange-400" />
-            <span>Audio Chimes are active on new orders</span>
+            <Volume2 className="w-4 h-4 text-orange-400 shrink-0" />
+            <div>
+              <p className="font-bold text-white">Order Fanfare Active</p>
+              <p className="text-[10px] text-orange-300/80">Swiggy/Zomato style order alert chime</p>
+            </div>
           </div>
-          <button
-            onClick={() => soundService.playNewOrderChime()}
-            className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shadow transition"
-          >
-            Play Chime
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => {
+                soundService.unlockAudio();
+                soundService.playLoudOrderAlarm(2.2);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shadow transition cursor-pointer"
+            >
+              Fanfare
+            </button>
+            <button
+              onClick={() => {
+                soundService.unlockAudio();
+                soundService.playNewOrderChime();
+              }}
+              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition cursor-pointer"
+            >
+              Chime
+            </button>
+          </div>
         </div>
 
         {/* List of order alerts */}

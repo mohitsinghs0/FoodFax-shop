@@ -23,9 +23,97 @@ class SoundNotificationService {
       this.audioCtx = new AudioCtx();
     }
     if (this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume();
+      this.audioCtx.resume().catch(() => {});
     }
     return this.audioCtx;
+  }
+
+  // Pre-unlock audio on user tap/click anywhere so auto-playing chime isn't blocked by browser autoplay policy
+  public unlockAudio(): void {
+    try {
+      const ctx = this.getAudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+    } catch (_) {}
+  }
+
+  /**
+   * Order Alarm Sound - High-quality modern restaurant partner chime fanfare (Swiggy / Zomato / UberEats POS style)
+   * Plays a crisp, attention-grabbing ascending arpeggio chime with warm brass-bell resonance (approx 2 seconds)
+   * Highly audible and clear without harsh metallic distortion.
+   */
+  public playLoudOrderAlarm(durationSec: number = 2.2): void {
+    if (!this.soundEnabled) return;
+    try {
+      const ctx = this.getAudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      const now = ctx.currentTime;
+
+      // Master output gain
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.75, now);
+      masterGain.connect(ctx.destination);
+
+      // 4-note ascending fanfare chime chord sequence:
+      // Note 1: E5 (659.25 Hz)
+      // Note 2: G#5 (830.61 Hz)
+      // Note 3: B5 (987.77 Hz)
+      // Note 4: E6 (1318.51 Hz) - held with warm shimmer
+      const chordTones = [
+        { freq: 659.25, time: 0.0, dur: 0.4 },
+        { freq: 830.61, time: 0.16, dur: 0.4 },
+        { freq: 987.77, time: 0.32, dur: 0.45 },
+        { freq: 1318.51, time: 0.48, dur: 0.9 },
+      ];
+
+      // Second fanfare chime wave for urgency
+      const secondWaveTones = [
+        { freq: 830.61, time: 1.1, dur: 0.35 },
+        { freq: 987.77, time: 1.25, dur: 0.35 },
+        { freq: 1318.51, time: 1.4, dur: 0.8 },
+      ];
+
+      const allNotes = [...chordTones, ...secondWaveTones];
+
+      allNotes.forEach(({ freq, time, dur }) => {
+        const start = now + time;
+        const end = start + dur;
+
+        // Primary tone: warm sine
+        const osc1 = ctx.createOscillator();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(freq, start);
+
+        // Secondary tone: bright triangle harmonic (gives punch & cut-through)
+        const osc2 = ctx.createOscillator();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(freq * 2, start); // 1st octave harmonic
+
+        const noteGain = ctx.createGain();
+        noteGain.gain.setValueAtTime(0.0001, start);
+        noteGain.gain.linearRampToValueAtTime(0.5, start + 0.03); // Quick, punchy attack
+        noteGain.gain.exponentialRampToValueAtTime(0.0001, end); // Smooth bell-like decay
+
+        const harmonicGain = ctx.createGain();
+        harmonicGain.gain.setValueAtTime(0.12, start);
+        harmonicGain.gain.exponentialRampToValueAtTime(0.0001, start + dur * 0.6);
+
+        osc1.connect(noteGain);
+        osc2.connect(harmonicGain);
+        harmonicGain.connect(noteGain);
+        noteGain.connect(masterGain);
+
+        osc1.start(start);
+        osc1.stop(end);
+        osc2.start(start);
+        osc2.stop(end);
+      });
+    } catch (e) {
+      console.warn('Loud alarm playback error:', e);
+    }
   }
 
   // Play classic 2-tone pleasant restaurant order chime

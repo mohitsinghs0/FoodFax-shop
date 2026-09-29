@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
+import { CustomizeLayoutModal } from '../components/CustomizeLayoutModal';
 import { 
   ArrowLeft, 
   Store, 
@@ -7,7 +8,9 @@ import {
   QrCode, 
   Bell, 
   ChevronRight,
-  LogOut
+  LogOut,
+  BarChart3,
+  Sliders
 } from 'lucide-react';
 
 interface ProfileScreenProps {
@@ -21,8 +24,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onOpenNotifications,
   onOpenShopProfile,
 }) => {
-  const { ownerProfile, shop, logout, setActiveScreen } = useOwnerApp();
+  const { ownerProfile, shop, logout, setActiveScreen, dashboardPreferences, updateDashboardLayout } = useOwnerApp();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showLayoutModal, setShowLayoutModal] = useState(false);
 
   const initial = (ownerProfile?.fullName || shop?.name || 'M')[0].toUpperCase();
 
@@ -67,7 +71,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           {/* Item 1: Shop Profile & Address */}
           <button
             onClick={onOpenShopProfile}
-            className="w-full p-4 flex items-center justify-between hover:bg-[#1a253e] transition text-left"
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a253e] transition text-left cursor-pointer"
           >
             <div className="flex items-center gap-3.5">
               <Store className="w-5 h-5 text-[#F97316] stroke-[2]" />
@@ -106,7 +110,45 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <ChevronRight className="w-4 h-4 text-[#64748B]" />
           </button>
 
-          {/* Item 4: Chime & Sound Alerts */}
+          {/* Item 4: Sales & Business Analytics */}
+          <button
+            onClick={() => setActiveScreen('sales')}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a253e] transition text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-3.5">
+              <BarChart3 className="w-5 h-5 text-teal-400 stroke-[2]" />
+              <div>
+                <span className="text-[13px] font-bold text-white block">
+                  Sales Reports &amp; PDF Export
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Custom calendar dates, 1-4 day filters, and summaries
+                </span>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#64748B]" />
+          </button>
+
+          {/* Item 5: Customize Dashboard Layout */}
+          <button
+            onClick={() => setShowLayoutModal(true)}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a253e] transition text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-3.5">
+              <Sliders className="w-5 h-5 text-orange-400 stroke-[2]" />
+              <div>
+                <span className="text-[13px] font-bold text-white block">
+                  Customize Dashboard Cards
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Add or remove Total Sales, Active Orders, Top Items cards
+                </span>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#64748B]" />
+          </button>
+
+          {/* Item 6: Chime & Sound Alerts */}
           <button
             onClick={onOpenNotifications}
             className="w-full p-4 flex items-center justify-between hover:bg-[#1a253e] transition text-left"
@@ -131,6 +173,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Customize Dashboard Layout Modal */}
+      {showLayoutModal && (
+        <CustomizeLayoutModal
+          preferences={dashboardPreferences}
+          onSave={updateDashboardLayout}
+          onClose={() => setShowLayoutModal(false)}
+        />
+      )}
 
       {/* Logout Confirmation Dialog */}
       {showLogoutConfirm && (

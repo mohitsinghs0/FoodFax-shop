@@ -104,6 +104,26 @@ export interface Shop {
   createdAt?: string;
 }
 
+export interface DashboardCardPreferences {
+  todaySales: boolean;
+  activeOrders: boolean;
+  preparingOrders: boolean;
+  completedOrders: boolean;
+  topSellingItems: boolean;
+  quickActions: boolean;
+  recentOrders: boolean;
+}
+
+export const DEFAULT_DASHBOARD_PREFERENCES: DashboardCardPreferences = {
+  todaySales: true,
+  activeOrders: true,
+  preparingOrders: true,
+  completedOrders: true,
+  topSellingItems: true,
+  quickActions: true,
+  recentOrders: true,
+};
+
 export interface OwnerProfile {
   id: string;
   email?: string;
@@ -111,6 +131,7 @@ export interface OwnerProfile {
   phone: string;
   avatarUrl?: string;
   role: 'owner';
+  dashboardLayout?: DashboardCardPreferences;
   createdAt?: string;
 }
 
