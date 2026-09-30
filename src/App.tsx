@@ -48,6 +48,10 @@ const MainAppContent: React.FC = () => {
     hasCompletedShopSetup &&
     !['splash', 'onboarding', 'login', 'register', 'shop_setup'].includes(activeScreen);
 
+  // Strict Anti-Bypass Guard: If user is not authenticated and attempts to view an internal screen, force login
+  const isPublicScreen = ['splash', 'onboarding', 'login', 'register'].includes(activeScreen);
+  const effectiveScreen = !isAuthenticated && !isPublicScreen ? 'login' : activeScreen;
+
   return (
     <MobileFrame>
       {/* Top App Bar on internal screens */}
@@ -60,16 +64,16 @@ const MainAppContent: React.FC = () => {
       )}
 
       {/* Screen Router wrapped in Suspense with smooth Skeleton Loader */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative">
         <Suspense fallback={<ScreenSkeletonFallback />}>
-          {activeScreen === 'splash' && <SplashScreen />}
-          {activeScreen === 'onboarding' && <OnboardingScreen />}
-          {activeScreen === 'login' && <LoginScreen />}
-          {activeScreen === 'register' && <RegisterScreen />}
-          {activeScreen === 'shop_setup' && <ShopSetupScreen />}
-          {activeScreen === 'dashboard' && <DashboardScreen />}
-          {activeScreen === 'orders' && <OrdersScreen />}
-          {activeScreen === 'menu' && (
+          {effectiveScreen === 'splash' && <SplashScreen />}
+          {effectiveScreen === 'onboarding' && <OnboardingScreen />}
+          {effectiveScreen === 'login' && <LoginScreen />}
+          {effectiveScreen === 'register' && <RegisterScreen />}
+          {effectiveScreen === 'shop_setup' && <ShopSetupScreen />}
+          {effectiveScreen === 'dashboard' && <DashboardScreen />}
+          {effectiveScreen === 'orders' && <OrdersScreen />}
+          {effectiveScreen === 'menu' && (
             <MenuScreen
               onOpenAddItem={(item) => {
                 setEditingMenuItem(item || null);
@@ -77,9 +81,9 @@ const MainAppContent: React.FC = () => {
               }}
             />
           )}
-          {activeScreen === 'shop_qr' && <ShopQrScreen />}
-          {activeScreen === 'sales' && <SalesScreen />}
-          {activeScreen === 'profile' && (
+          {effectiveScreen === 'shop_qr' && <ShopQrScreen />}
+          {effectiveScreen === 'sales' && <SalesScreen />}
+          {effectiveScreen === 'profile' && (
             <ProfileScreen
               onOpenSettings={() => setShowSettingsModal(true)}
               onOpenNotifications={() => setShowNotificationsModal(true)}
@@ -89,7 +93,7 @@ const MainAppContent: React.FC = () => {
         </Suspense>
       </main>
 
-      {/* Bottom Nav Bar on internal screens */}
+      {/* Bottom Nav Bar on internal screens - Pinned and fixed at bottom */}
       {isInternalApp && <BottomNavBar />}
 
       {/* On-demand Lazy-loaded Modals - Mounted only when needed */}

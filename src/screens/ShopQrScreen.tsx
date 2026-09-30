@@ -18,7 +18,7 @@ export const ShopQrScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] pb-20 select-none">
+    <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] pb-24 select-none">
       {/* Top App Bar matching Photo 4 */}
       <div className="px-4 py-3.5 border-b border-[#131B2E] flex items-center gap-3 sticky top-0 bg-[#0B0F19] z-20">
         <button

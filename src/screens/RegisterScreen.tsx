@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
-import { Store, User, Phone, Lock, Eye, EyeOff, Loader2, AlertCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { 
+  Store, 
+  User, 
+  Phone, 
+  Lock, 
+  Eye, 
+  EyeOff, 
+  Loader2, 
+  AlertCircle, 
+  ArrowLeft, 
+  CheckCircle2,
+  ShieldCheck,
+  Check
+} from 'lucide-react';
 import { registerSchema } from '../utils/validationSchemas';
+import { authSecurityService } from '../services/authSecurityService';
 
 export const RegisterScreen: React.FC = () => {
   const { registerWithPhone, isLoading, errorMessage, setActiveScreen } = useOwnerApp();
@@ -20,6 +34,15 @@ export const RegisterScreen: React.FC = () => {
   const [generalError, setGeneralError] = useState<string | null>(null);
 
   const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+
+  // Dynamic Password Security Assessment
+  const strength = authSecurityService.assessPasswordStrength(password);
+  const hasMinLength = password.length >= 6;
+  const hasNumber = /\d/.test(password);
+  const hasLetter = /[a-zA-Z]/.test(password);
+  const hasSpecialOrLong = /[^a-zA-Z0-9]/.test(password) || password.length >= 8;
+  const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword;
+  const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,6 +209,72 @@ export const RegisterScreen: React.FC = () => {
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+
+          {/* Visual Password Strength Indicator (Meter) */}
+          {password.length > 0 && (
+            <div className="mt-2.5 p-3 rounded-xl bg-[#0B0F19] border border-[#23304A] space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[#94A3B8] font-medium flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-orange-400" />
+                  <span>Password Security</span>
+                </span>
+                <span className={`font-bold ${strength.color} tracking-wide`}>
+                  {strength.label}
+                </span>
+              </div>
+
+              {/* Segmented Meter Bar */}
+              <div className="grid grid-cols-4 gap-1.5 h-1.5">
+                {[1, 2, 3, 4].map((step) => {
+                  let activeClass = 'bg-slate-800';
+                  if (strength.score >= step) {
+                    if (strength.score === 1) activeClass = 'bg-red-500';
+                    else if (strength.score === 2) activeClass = 'bg-orange-500';
+                    else if (strength.score === 3) activeClass = 'bg-amber-400';
+                    else activeClass = 'bg-emerald-400';
+                  }
+                  return (
+                    <div
+                      key={step}
+                      className={`h-full rounded-full transition-all duration-300 ${activeClass}`}
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Requirement Criteria Badges */}
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1 pt-1">
+                <div className={`flex items-center gap-1.5 text-[11px] ${hasMinLength ? 'text-emerald-400 font-medium' : 'text-[#64748B]'}`}>
+                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${hasMinLength ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  </div>
+                  <span>6+ characters</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 text-[11px] ${hasNumber ? 'text-emerald-400 font-medium' : 'text-[#64748B]'}`}>
+                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${hasNumber ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  </div>
+                  <span>Contains number</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 text-[11px] ${hasLetter ? 'text-emerald-400 font-medium' : 'text-[#64748B]'}`}>
+                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${hasLetter ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  </div>
+                  <span>Contains letter</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 text-[11px] ${hasSpecialOrLong ? 'text-emerald-400 font-medium' : 'text-[#64748B]'}`}>
+                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${hasSpecialOrLong ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  </div>
+                  <span>Symbol or 8+ chars</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {fieldErrors['password'] && (
             <p className="text-[11px] text-red-400 mt-1 flex items-center gap-1 font-medium">
               <AlertCircle className="w-3 h-3" />
@@ -217,6 +306,18 @@ export const RegisterScreen: React.FC = () => {
               required
             />
           </div>
+          {passwordsMatch && (
+            <p className="text-[11px] text-emerald-400 mt-1.5 flex items-center gap-1 font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Passwords match</span>
+            </p>
+          )}
+          {passwordsMismatch && (
+            <p className="text-[11px] text-amber-400/90 mt-1.5 flex items-center gap-1 font-medium">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+              <span>Passwords do not match yet</span>
+            </p>
+          )}
           {fieldErrors['confirmPassword'] && (
             <p className="text-[11px] text-red-400 mt-1 flex items-center gap-1 font-medium">
               <AlertCircle className="w-3 h-3" />

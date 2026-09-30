@@ -11,6 +11,7 @@ import {
   ShoppingBag, 
   Clock, 
   ArrowUpRight,
+  ArrowLeft,
   Filter,
   Check,
   ChevronLeft,
@@ -21,7 +22,7 @@ import {
 type PresetFilter = 'today' | 'yesterday' | 'last_4_days' | 'last_7_days' | 'custom';
 
 export const SalesScreen: React.FC = () => {
-  const { orders, shop } = useOwnerApp();
+  const { orders, shop, setActiveScreen } = useOwnerApp();
 
   // Selected date range state: 'YYYY-MM-DD' strings
   const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -170,18 +171,25 @@ export const SalesScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4 pb-28 p-4 max-w-4xl mx-auto select-none">
+    <div className="space-y-4 pb-24 p-3.5 max-w-[440px] mx-auto select-none">
       {/* Page Header with Direct PDF Download Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#131B2E] pb-3.5">
+      <div className="flex flex-col gap-3 border-b border-[#1E293B] pb-3">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-black text-white tracking-tight">Sales &amp; Business Analytics</h2>
-            <span className="px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 text-[10px] font-black uppercase tracking-wider border border-orange-500/30">
+            <button
+              onClick={() => setActiveScreen('dashboard')}
+              className="p-1 -ml-1 text-white hover:text-[#F97316] transition cursor-pointer"
+              title="Back to Dashboard"
+            >
+              <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
+            </button>
+            <h2 className="text-lg font-black text-white tracking-tight truncate">Sales &amp; Analytics</h2>
+            <span className="px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 text-[10px] font-black uppercase tracking-wider border border-orange-500/30 shrink-0">
               Live POS
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Real-time revenue reports, payment settlements, and item sales
+          <p className="text-[11px] text-slate-400 mt-1">
+            Real-time revenue reports, payment settlements &amp; sales
           </p>
         </div>
 
@@ -189,7 +197,7 @@ export const SalesScreen: React.FC = () => {
         <button
           onClick={handleDownloadPdf}
           disabled={isExportingPdf}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold text-xs shadow-lg shadow-orange-950/40 transition active:scale-95 cursor-pointer disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold text-xs shadow-md shadow-orange-950/40 transition active:scale-95 cursor-pointer disabled:opacity-50"
           title="Download sales summary in PDF format"
         >
           <FileDown className="w-4 h-4 stroke-[2.2]" />

@@ -22,6 +22,7 @@ import {
   purgeShopBinding, 
   sanitizeBrowserUrlTampering 
 } from '../services/securityService';
+import { authSecurityService } from '../services/authSecurityService';
 
 interface OwnerAppContextType {
   activeScreen: ActiveScreen;
@@ -170,17 +171,44 @@ function saveLocalUser(phone: string, data: { password: string; fullName: string
 }
 
 export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [activeScreen, setActiveScreen] = useState<ActiveScreen>('splash');
+  const [activeScreen, setActiveScreenState] = useState<ActiveScreen>('splash');
   const [ownerProfile, setOwnerProfile] = useState<OwnerProfile | null>(() => {
-    const saved = localStorage.getItem('foodfax_owner_profile');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.id) return parsed;
-      } catch (_) {}
+    // If offline and valid cached profile exists
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const saved = localStorage.getItem('foodfax_owner_profile');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.id) return parsed;
+        } catch (_) {}
+      }
     }
     return null;
   });
+
+  // Strict Anti-Bypass Guard: Block unauthenticated access to internal screens
+  const setActiveScreen = useCallback((screenOrUpdater: ActiveScreen | ((prev: ActiveScreen) => ActiveScreen)) => {
+    const publicScreens: ActiveScreen[] = ['splash', 'onboarding', 'login', 'register'];
+    
+    if (typeof screenOrUpdater === 'function') {
+      setActiveScreenState((prev) => {
+        const next = screenOrUpdater(prev);
+        if (!ownerProfile && !publicScreens.includes(next)) {
+          console.warn(`[RouteGuard] Blocked unauthorized transition to "${next}". Redirecting to login.`);
+          return 'login';
+        }
+        return next;
+      });
+      return;
+    }
+
+    if (!ownerProfile && !publicScreens.includes(screenOrUpdater)) {
+      console.warn(`[RouteGuard] Blocked unauthorized navigation to "${screenOrUpdater}". User must authenticate.`);
+      setActiveScreenState('login');
+      return;
+    }
+    setActiveScreenState(screenOrUpdater);
+  }, [ownerProfile]);
 
   const [shop, setShop] = useState<Shop | null>(() => {
     const saved = localStorage.getItem('foodfax_owner_shop');
@@ -634,60 +662,53 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             setIsLoading(false);
           }
         } else {
-          console.log('[OwnerAppProvider] ℹ️ No active session returned by getSession(). Checking local fallback cache...');
-          const savedProfile = localStorage.getItem('foodfax_owner_profile');
-          let hasCachedUser = false;
-          if (savedProfile) {
-            try {
-              const parsed = JSON.parse(savedProfile);
-              if (parsed?.id) {
-                // Verify cryptographic single-shop binding for cached local session if a shop was stored
+          console.log('[OwnerAppProvider] ℹ️ No active session returned by getSession(). Enforcing clean unauthenticated state.');
+          
+          let hasOfflineAccess = false;
+          // Only permit offline access if genuinely offline AND cryptographic binding is valid
+          if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            const savedProfile = localStorage.getItem('foodfax_owner_profile');
+            if (savedProfile) {
+              try {
+                const parsed = JSON.parse(savedProfile);
                 const savedShop = localStorage.getItem('foodfax_owner_shop');
-                let isBindingValid = true;
-                if (savedShop) {
-                  try {
-                    const parsedShop = JSON.parse(savedShop);
-                    if (parsedShop?.id) {
-                      const bindingCheck = await verifyShopBinding(parsed.id, parsedShop.id);
-                      if (!bindingCheck.valid) {
-                        console.warn('[Security] Cryptographic shop binding verification failed for cached session:', bindingCheck.reason);
-                        localStorage.removeItem('foodfax_owner_shop');
-                        purgeShopBinding();
-                        isBindingValid = false;
-                      }
-                    }
-                  } catch (_) {
-                    isBindingValid = false;
+                if (parsed?.id && savedShop) {
+                  const parsedShop = JSON.parse(savedShop);
+                  const bindingCheck = await verifyShopBinding(parsed.id, parsedShop.id);
+                  if (bindingCheck.valid) {
+                    setOwnerProfile(parsed);
+                    await loadDatabaseData(parsed.id);
+                    hasOfflineAccess = true;
                   }
                 }
-
-                console.log('[OwnerAppProvider] 🔄 Found locally cached owner profile:', parsed.id, parsed.fullName);
-                setOwnerProfile(parsed);
-                await loadDatabaseData(parsed.id);
-                hasCachedUser = true;
-              }
-            } catch (e) {
-              console.warn('[OwnerAppProvider] Failed parsing cached profile:', e);
+              } catch (_) {}
             }
           }
 
-          // Conclude session validation: mark isLoading to false before determining unauthenticated navigation
+          if (!hasOfflineAccess) {
+            // Clean up any stale unauthenticated storage to strictly avoid session bypass
+            authSecurityService.purgeAllAuthStorage();
+            setOwnerProfile(null);
+            setShop(null);
+          }
+
           setIsLoading(false);
 
-          // Update routing logic: activeScreen is ONLY set to 'onboarding' or 'login' after isLoading becomes false post-session validation
-          if (!hasCachedUser) {
+          if (!hasOfflineAccess) {
             const hasOnboarded = localStorage.getItem('foodfax_has_onboarded');
-            console.log('[OwnerAppProvider] Post-session validation routing (foodfax_has_onboarded):', hasOnboarded);
             const targetScreen: ActiveScreen = hasOnboarded === 'true' ? 'login' : 'onboarding';
-            setActiveScreen((prev) => (prev === 'splash' ? targetScreen : prev));
+            setActiveScreenState((prev) => (prev === 'splash' ? targetScreen : prev));
           }
         }
       })
       .catch((err) => {
         console.error('[OwnerAppProvider] ❌ Error in supabase.auth.getSession():', err);
+        authSecurityService.purgeAllAuthStorage();
+        setOwnerProfile(null);
+        setShop(null);
         setIsLoading(false);
         const hasOnboarded = localStorage.getItem('foodfax_has_onboarded');
-        setActiveScreen((prev) => (prev === 'splash' ? (hasOnboarded === 'true' ? 'login' : 'onboarding') : prev));
+        setActiveScreenState((prev) => (prev === 'splash' ? (hasOnboarded === 'true' ? 'login' : 'onboarding') : prev));
       });
 
     // 2. Auth State Change Listener
@@ -841,7 +862,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     browserNotificationService.triggerTestNotification();
   }, []);
 
-  // AUTH: Login with Phone & Password (Validates against REAL database users table)
+  // AUTH: Login with Phone & Password (Enforces strict credential validation - NO BYPASS)
   const loginWithPhone = async (phone: string, pass: string): Promise<boolean> => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -850,79 +871,99 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const digits = cleanPhone.replace(/\D/g, '');
     const last10 = digits.slice(-10);
 
+    // 1. Check Brute-Force Rate Limiting & Account Lockout
+    const lockout = authSecurityService.checkLockout(cleanPhone);
+    if (lockout.isLocked) {
+      setErrorMessage(`Account temporarily locked for security. Please try again in ${lockout.remainingSeconds} seconds.`);
+      setIsLoading(false);
+      return false;
+    }
+
+    if (!pass || pass.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long.');
+      setIsLoading(false);
+      return false;
+    }
+
     const client = getSupabaseClient();
     const localUsers = getLocalUsers();
     const localUser = localUsers[last10];
 
     if (client) {
       try {
-        let matchedUserId: string | null = null;
-        let matchedName: string = 'Restaurant Owner';
-
-        // Check in 'public.users' table
-        const { data: dbUser, error: userQueryErr } = await client
-          .from('users')
-          .select('*')
-          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
-          .maybeSingle();
-
-        if (dbUser) {
-          matchedUserId = dbUser.id;
-          matchedName = dbUser.full_name || 'Restaurant Owner';
-        } else {
-          // Check shops table for owner phone
-          const { data: dbShop } = await client
-            .from('shops')
-            .select('*')
-            .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
-            .maybeSingle();
-
-          if (dbShop) {
-            matchedUserId = dbShop.owner_id;
-            matchedName = dbShop.name || 'Restaurant Owner';
-          }
-        }
-
-        // Try Supabase Auth sign-in
         const internalEmail = phoneToInternalEmail(cleanPhone);
-        const { data: emailData, error: emailError } = await client.auth.signInWithPassword({
+
+        // Strict Supabase Auth check - Password is required and verified by Supabase
+        const { data: authData, error: authError } = await client.auth.signInWithPassword({
           email: internalEmail,
           password: pass,
         });
 
-        if (!emailError && emailData?.user) {
-          matchedUserId = emailData.user.id;
-        }
+        if (!authError && authData?.user) {
+          authSecurityService.recordSuccessfulAttempt(cleanPhone);
 
-        // If user is verified in Supabase
-        if (matchedUserId) {
+          let fullName = authData.user.user_metadata?.full_name || 'Restaurant Owner';
+
+          // Retrieve verified user profile from database
+          const { data: dbUser } = await client
+            .from('users')
+            .select('*')
+            .eq('id', authData.user.id)
+            .maybeSingle();
+
+          if (dbUser?.full_name) {
+            fullName = dbUser.full_name;
+          }
+
           const profile: OwnerProfile = {
-            id: matchedUserId,
+            id: authData.user.id,
+            email: internalEmail,
             phone: cleanPhone,
-            fullName: matchedName,
+            fullName,
             role: 'owner',
           };
+
           setOwnerProfile(profile);
-          await loadDatabaseData(matchedUserId);
+          await loadDatabaseData(authData.user.id);
           setIsLoading(false);
+          setActiveScreenState('dashboard');
           return true;
         }
 
-        // Check local registered fallback
-        if (localUser && localUser.password === pass) {
-          const profile: OwnerProfile = {
-            id: localUser.id,
-            phone: cleanPhone,
-            fullName: localUser.fullName,
-            role: 'owner',
-          };
-          setOwnerProfile(profile);
-          setIsLoading(false);
-          setActiveScreen('dashboard');
-          return true;
+        // If Supabase Auth failed, check local storage registered credentials
+        if (localUser) {
+          if (localUser.password === pass) {
+            authSecurityService.recordSuccessfulAttempt(cleanPhone);
+            const profile: OwnerProfile = {
+              id: localUser.id,
+              phone: cleanPhone,
+              fullName: localUser.fullName,
+              role: 'owner',
+            };
+            setOwnerProfile(profile);
+            await loadDatabaseData(localUser.id);
+            setIsLoading(false);
+            setActiveScreenState('dashboard');
+            return true;
+          } else {
+            const lock = authSecurityService.recordFailedAttempt(cleanPhone);
+            if (lock.isLocked) {
+              setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s.`);
+            } else {
+              setErrorMessage('Incorrect password or PIN. Access denied.');
+            }
+            setIsLoading(false);
+            return false;
+          }
         }
 
-        setErrorMessage(`Mobile number ${cleanPhone} is not registered yet. Please click 'Register Restaurant' below.`);
+        // Neither Supabase Auth nor local credentials matched
+        const lock = authSecurityService.recordFailedAttempt(cleanPhone);
+        if (lock.isLocked) {
+          setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s.`);
+        } else {
+          setErrorMessage('Invalid mobile number or password. Please verify credentials or register.');
+        }
         setIsLoading(false);
         return false;
       } catch (err: any) {
@@ -933,6 +974,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     // Offline / Local Registry Fallback
     if (localUser) {
       if (localUser.password === pass) {
+        authSecurityService.recordSuccessfulAttempt(cleanPhone);
         const profile: OwnerProfile = {
           id: localUser.id,
           phone: cleanPhone,
@@ -941,10 +983,15 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         };
         setOwnerProfile(profile);
         setIsLoading(false);
-        setActiveScreen('dashboard');
+        setActiveScreenState('dashboard');
         return true;
       } else {
-        setErrorMessage('Incorrect password or PIN. Please check and try again.');
+        const lock = authSecurityService.recordFailedAttempt(cleanPhone);
+        if (lock.isLocked) {
+          setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s.`);
+        } else {
+          setErrorMessage('Incorrect password or PIN. Access denied.');
+        }
         setIsLoading(false);
         return false;
       }
@@ -955,16 +1002,59 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     return false;
   };
 
-  // AUTH: Send Phone OTP
+  // AUTH: Send Phone OTP (Generates cryptographically random 6-digit OTP tied to phone)
   const sendPhoneOtp = async (phone: string): Promise<boolean> => {
     setIsLoading(true);
     setErrorMessage(null);
 
     const cleanPhone = phone.trim().replaceAll(' ', '');
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const digits = cleanPhone.replace(/\D/g, '');
+    const last10 = digits.slice(-10);
+
+    // 1. Check Brute-Force Lockout
+    const lockout = authSecurityService.checkLockout(cleanPhone);
+    if (lockout.isLocked) {
+      setErrorMessage(`Account temporarily locked. Please wait ${lockout.remainingSeconds} seconds.`);
+      setIsLoading(false);
+      return false;
+    }
+
+    // 2. Verify that the mobile number is actually registered in the database or local store
+    const client = getSupabaseClient();
+    const localUsers = getLocalUsers();
+    let isRegistered = Boolean(localUsers[last10]);
+
+    if (client && !isRegistered) {
+      try {
+        const { data: dbUser } = await client
+          .from('users')
+          .select('id')
+          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
+          .maybeSingle();
+
+        if (dbUser) {
+          isRegistered = true;
+        } else {
+          const { data: dbShop } = await client
+            .from('shops')
+            .select('id')
+            .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
+            .maybeSingle();
+          if (dbShop) isRegistered = true;
+        }
+      } catch (_) {}
+    }
+
+    if (!isRegistered) {
+      setErrorMessage(`Mobile number ${cleanPhone} is not registered yet. Please click 'Register Restaurant' below.`);
+      setIsLoading(false);
+      return false;
+    }
+
+    // 3. Generate Cryptographically Secure OTP (Valid 5 mins, max 3 tries)
+    const { code } = authSecurityService.generateSecureOtp(cleanPhone);
     setGeneratedOtp(code);
 
-    const client = getSupabaseClient();
     if (client) {
       try {
         await client.auth.signInWithOtp({ phone: cleanPhone });
@@ -975,7 +1065,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     return true;
   };
 
-  // AUTH: Verify Phone OTP
+  // AUTH: Verify Phone OTP (Strict verification - NO hardcoded bypasses or length-only checks)
   const verifyPhoneOtp = async (phone: string, token: string): Promise<boolean> => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -985,63 +1075,80 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const digits = cleanPhone.replace(/\D/g, '');
     const last10 = digits.slice(-10);
 
-    if (cleanToken === generatedOtp || cleanToken === '123456' || cleanToken.length === 6) {
-      const client = getSupabaseClient();
-      let userId = 'owner_' + digits;
-      let userName = 'Restaurant Owner';
-
-      const localUsers = getLocalUsers();
-      if (localUsers[last10]) {
-        userId = localUsers[last10].id;
-        userName = localUsers[last10].fullName;
-      }
-
-      if (client) {
-        try {
-          const internalEmail = phoneToInternalEmail(cleanPhone);
-          const { data: signUpData } = await client.auth.signUp({
-            email: internalEmail,
-            password: 'FoodFaxOwner@' + cleanToken,
-            options: { data: { phone: cleanPhone, role: 'owner' } },
-          });
-          if (signUpData?.user) {
-            userId = signUpData.user.id;
-          }
-
-          // Insert into 'public.users' table
-          await client.from('users').upsert({
-            id: userId,
-            phone: cleanPhone,
-            email: internalEmail,
-            full_name: userName,
-            role: 'owner',
-            profile_completed: true,
-            is_active: true,
-            updated_at: new Date().toISOString(),
-          });
-        } catch (_) {}
-      }
-
-      const profile: OwnerProfile = {
-        id: userId,
-        phone: cleanPhone,
-        fullName: userName,
-        role: 'owner',
-      };
-      setOwnerProfile(profile);
-
-      if (client) {
-        await loadDatabaseData(userId);
-      } else {
-        setActiveScreen(shop ? 'dashboard' : 'shop_setup');
-      }
+    // 1. Check Brute-Force Lockout
+    const lockout = authSecurityService.checkLockout(cleanPhone);
+    if (lockout.isLocked) {
+      setErrorMessage(`Account locked due to multiple failed attempts. Wait ${lockout.remainingSeconds}s.`);
       setIsLoading(false);
-      return true;
+      return false;
     }
 
-    setErrorMessage('Invalid 6-digit verification code. Please try again.');
+    // 2. Strict OTP verification via AuthSecurityService - NO BYPASS ALLOWED
+    const otpResult = authSecurityService.verifySecureOtp(cleanPhone, cleanToken);
+    if (!otpResult.success) {
+      const lock = authSecurityService.recordFailedAttempt(cleanPhone);
+      if (lock.isLocked) {
+        setErrorMessage(`Too many incorrect attempts! Account locked for ${lock.remainingSeconds}s.`);
+      } else {
+        setErrorMessage(otpResult.error || 'Invalid verification code. Access denied.');
+      }
+      setIsLoading(false);
+      return false;
+    }
+
+    // OTP Verified! Clear failed attempts
+    authSecurityService.recordSuccessfulAttempt(cleanPhone);
+
+    const client = getSupabaseClient();
+    const localUsers = getLocalUsers();
+    let userId = 'owner_' + digits;
+    let userName = 'Restaurant Owner';
+
+    if (localUsers[last10]) {
+      userId = localUsers[last10].id;
+      userName = localUsers[last10].fullName;
+    }
+
+    if (client) {
+      try {
+        const { data: dbUser } = await client
+          .from('users')
+          .select('*')
+          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
+          .maybeSingle();
+
+        if (dbUser) {
+          userId = dbUser.id;
+          userName = dbUser.full_name || userName;
+        } else {
+          const { data: dbShop } = await client
+            .from('shops')
+            .select('*')
+            .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
+            .maybeSingle();
+          if (dbShop) {
+            userId = dbShop.owner_id;
+            userName = dbShop.name || userName;
+          }
+        }
+      } catch (_) {}
+    }
+
+    const profile: OwnerProfile = {
+      id: userId,
+      phone: cleanPhone,
+      fullName: userName,
+      role: 'owner',
+    };
+    setOwnerProfile(profile);
+
+    if (client) {
+      await loadDatabaseData(userId);
+    } else {
+      setActiveScreenState(shop ? 'dashboard' : 'shop_setup');
+    }
     setIsLoading(false);
-    return false;
+    return true;
   };
 
   // AUTH: Register with Phone (Stores real user in Supabase 'public.users' table)
@@ -1140,7 +1247,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     return true;
   };
 
-  // AUTH: Request Password Reset via Phone
+  // AUTH: Request Password Reset via Phone (Secure cryptographically generated OTP)
   const requestPasswordReset = async (
     phone: string
   ): Promise<{ success: boolean; message: string; otp?: string }> => {
@@ -1148,7 +1255,45 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     setErrorMessage(null);
 
     const cleanPhone = phone.trim().replaceAll(' ', '');
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const digits = cleanPhone.replace(/\D/g, '');
+    const last10 = digits.slice(-10);
+
+    // 1. Check lockout
+    const lockout = authSecurityService.checkLockout(cleanPhone);
+    if (lockout.isLocked) {
+      setIsLoading(false);
+      return {
+        success: false,
+        message: `Account temporarily locked due to multiple attempts. Please wait ${lockout.remainingSeconds}s.`,
+      };
+    }
+
+    // 2. Verify registered number
+    const client = getSupabaseClient();
+    const localUsers = getLocalUsers();
+    let isRegistered = Boolean(localUsers[last10]);
+
+    if (client && !isRegistered) {
+      try {
+        const { data: dbUser } = await client
+          .from('users')
+          .select('id')
+          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10}`)
+          .maybeSingle();
+        if (dbUser) isRegistered = true;
+      } catch (_) {}
+    }
+
+    if (!isRegistered) {
+      setIsLoading(false);
+      return {
+        success: false,
+        message: `Mobile number ${cleanPhone} is not registered. Please register your restaurant first.`,
+      };
+    }
+
+    // 3. Generate Secure Reset OTP
+    const { code } = authSecurityService.generatePasswordResetOtp(cleanPhone);
     setResetOtpCode(code);
     setIsLoading(false);
 
@@ -1159,7 +1304,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
   };
 
-  // AUTH: Reset Password with OTP
+  // AUTH: Reset Password with OTP (Strict validation - NO backdoor 123456)
   const resetPasswordWithOtp = async (
     phone: string,
     token: string,
@@ -1173,31 +1318,40 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const digits = cleanPhone.replace(/\D/g, '');
     const last10 = digits.slice(-10);
 
-    if (cleanToken === resetOtpCode || cleanToken === '123456' || cleanToken.length === 6) {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const internalEmail = phoneToInternalEmail(cleanPhone);
-          await client.auth.updateUser({ password: newPass });
-        } catch (_) {}
-      }
-
-      const localUsers = getLocalUsers();
-      if (localUsers[last10]) {
-        localUsers[last10].password = newPass;
-        localStorage.setItem('foodfax_local_users', JSON.stringify(localUsers));
-      }
-
+    if (newPass.length < 6) {
+      setErrorMessage('New password must be at least 6 characters long.');
       setIsLoading(false);
-      return true;
+      return false;
     }
 
-    setErrorMessage('Invalid or expired reset code. Please try again.');
+    // Strict validation against generated reset OTP
+    const verifyResult = authSecurityService.verifyPasswordResetOtp(cleanPhone, cleanToken);
+    if (!verifyResult.success) {
+      setErrorMessage(verifyResult.error || 'Invalid or expired reset code. Please try again.');
+      setIsLoading(false);
+      return false;
+    }
+
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const internalEmail = phoneToInternalEmail(cleanPhone);
+        await client.auth.updateUser({ password: newPass });
+      } catch (_) {}
+    }
+
+    const localUsers = getLocalUsers();
+    if (localUsers[last10]) {
+      localUsers[last10].password = newPass;
+      localStorage.setItem('foodfax_local_users', JSON.stringify(localUsers));
+    }
+
+    authSecurityService.recordSuccessfulAttempt(cleanPhone);
     setIsLoading(false);
-    return false;
+    return true;
   };
 
-  // AUTH: Logout
+  // AUTH: Logout (Completely purges session tokens and cached sensitive profile data)
   const logout = async () => {
     const client = getSupabaseClient();
     if (client) {
@@ -1206,12 +1360,13 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       } catch (_) {}
     }
     purgeShopBinding();
+    authSecurityService.purgeAllAuthStorage();
     setOwnerProfile(null);
     setShop(null);
     setOrders([]);
     setMenuItems([]);
     setMenuCategories([]);
-    setActiveScreen('login');
+    setActiveScreenState('login');
   };
 
   // SHOP SETUP / UPDATE in Supabase 'public.shops' table

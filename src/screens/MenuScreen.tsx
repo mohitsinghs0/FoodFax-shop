@@ -68,7 +68,7 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ onOpenAddItem }) => {
   }, [menuItems, selectedCatId, searchQuery]);
 
   return (
-    <div className="flex-1 bg-[#0B0F19] text-[#F8FAFC] pb-10 relative select-none flex flex-col">
+    <div className="flex-1 bg-[#0B0F19] text-[#F8FAFC] pb-24 relative select-none flex flex-col">
       {/* Top App Bar */}
       <div className="px-4 py-3.5 border-b border-[#131B2E] flex items-center justify-between sticky top-0 bg-[#0B0F19] z-20">
         <div className="flex items-center gap-3">
