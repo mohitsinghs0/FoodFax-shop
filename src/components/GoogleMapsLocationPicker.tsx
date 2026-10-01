@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 export const GOOGLE_MAPS_API_KEY = 
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyAgoO9tSAD1RgFvvsR3zJCPJeZT8M_0XNE';
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyCy0KAJ11MUKY9sbjL2OSjawwj9D1IPWZM';
 
 interface GoogleMapsLocationPickerProps {
   initialLat?: number;
