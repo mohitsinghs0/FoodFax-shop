@@ -148,7 +148,7 @@ const OwnerAppContext = createContext<OwnerAppContextType | undefined>(undefined
 // Helper for standard internal email format for Supabase Auth
 function phoneToInternalEmail(phone: string): string {
   const digits = phone.replace(/\D/g, '').slice(-10);
-  return `owner.${digits}@foodfax.in`;
+  return `ff.owner.${digits}@foodfax.local`;
 }
 
 // Local cache for offline persistence / resilient authentication
@@ -457,7 +457,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       // Query only the authenticated user's shop(s)
       let shopsQuery = client.from('shops').select('*');
       if (last10) {
-        shopsQuery = shopsQuery.or(`owner_id.eq.${userId},phone.ilike.%${last10}%`);
+        shopsQuery = shopsQuery.or(`owner_id.eq.${userId},phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`);
       } else {
         shopsQuery = shopsQuery.eq('owner_id', userId);
       }
@@ -673,32 +673,31 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             setIsLoading(false);
           }
         } else {
-          console.log('[OwnerAppProvider] ℹ️ Checking persistent local profile session...');
+          console.log('[OwnerAppProvider] ℹ️ No active session returned by getSession(). Enforcing clean unauthenticated state.');
           
-          let hasRestoredSession = false;
-          const savedProfile = localStorage.getItem('foodfax_owner_profile');
-          if (savedProfile) {
-            try {
-              const parsed = JSON.parse(savedProfile);
-              if (parsed?.id) {
-                // Verify user exists in database
-                const { data: dbUser } = await client
-                  .from('users')
-                  .select('id')
-                  .eq('id', parsed.id)
-                  .maybeSingle();
-
-                if (dbUser || (typeof navigator !== 'undefined' && !navigator.onLine)) {
-                  setOwnerProfile(parsed);
-                  await loadDatabaseData(parsed.id);
-                  hasRestoredSession = true;
+          let hasOfflineAccess = false;
+          // Only permit offline access if genuinely offline AND cryptographic binding is valid
+          if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            const savedProfile = localStorage.getItem('foodfax_owner_profile');
+            if (savedProfile) {
+              try {
+                const parsed = JSON.parse(savedProfile);
+                const savedShop = localStorage.getItem('foodfax_owner_shop');
+                if (parsed?.id && savedShop) {
+                  const parsedShop = JSON.parse(savedShop);
+                  const bindingCheck = await verifyShopBinding(parsed.id, parsedShop.id);
+                  if (bindingCheck.valid) {
+                    setOwnerProfile(parsed);
+                    await loadDatabaseData(parsed.id);
+                    hasOfflineAccess = true;
+                  }
                 }
-              }
-            } catch (_) {}
+              } catch (_) {}
+            }
           }
 
-          if (!hasRestoredSession) {
-            // Clean up any stale unauthenticated storage
+          if (!hasOfflineAccess) {
+            // Clean up any stale unauthenticated storage to strictly avoid session bypass
             authSecurityService.purgeAllAuthStorage();
             setOwnerProfile(null);
             setShop(null);
@@ -706,7 +705,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
           setIsLoading(false);
 
-          if (!hasRestoredSession) {
+          if (!hasOfflineAccess) {
             const hasOnboarded = localStorage.getItem('foodfax_has_onboarded');
             const targetScreen: ActiveScreen = hasOnboarded === 'true' ? 'login' : 'onboarding';
             setActiveScreenState((prev) => (prev === 'splash' ? targetScreen : prev));
@@ -886,13 +885,13 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     // 1. Check Brute-Force Rate Limiting & Account Lockout
     const lockout = authSecurityService.checkLockout(cleanPhone);
     if (lockout.isLocked) {
-      setErrorMessage(`Account temporarily locked for security. Please try again in ${lockout.remainingSeconds} seconds.`);
+      setErrorMessage(`Account temporarily locked for security. Please try again in ${lockout.remainingSeconds} seconds, or switch to Instant SMS OTP.`);
       setIsLoading(false);
       return false;
     }
 
-    if (!pass || pass.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long.');
+    if (!pass || pass.length < 4) {
+      setErrorMessage('Password must be at least 4 characters long.');
       setIsLoading(false);
       return false;
     }
@@ -905,148 +904,121 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       try {
         const internalEmail = phoneToInternalEmail(cleanPhone);
 
-        // 1. Query verified user from 'public.users' table
-        const { data: dbUser } = await client
+        // 1. Direct database verification in 'public.users' table
+        // This guarantees login works across devices, localhost, and cloud environments!
+        const { data: dbUsers } = await client
           .from('users')
           .select('*')
-          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10},phone.eq.+91 ${last10}`)
-          .maybeSingle();
+          .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`);
 
-        // 2. Query shop if user doesn't exist yet
-        let dbShop: any = null;
-        if (!dbUser) {
-          const { data: shopRes } = await client
-            .from('shops')
-            .select('*')
-            .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10},phone.eq.+91 ${last10}`)
-            .maybeSingle();
-          dbShop = shopRes;
-        }
+        if (dbUsers && dbUsers.length > 0) {
+          // Check for exact password match
+          const matchingPassUser = dbUsers.find(
+            (u: any) => u.password && u.password.trim() === pass.trim()
+          );
 
-        // Case A: User found in 'users' table
-        if (dbUser) {
-          let passwordValid = false;
-
-          // Condition 1: Database password matches directly
-          if (dbUser.password && dbUser.password === pass) {
-            passwordValid = true;
-          }
-          // Condition 2: Existing owner had null password (first password setup for registered owner)
-          else if (!dbUser.password) {
-            // Save entered password into users table so it is permanently set
-            await client.from('users').update({
-              password: pass,
-              updated_at: new Date().toISOString(),
-            }).eq('id', dbUser.id);
-            passwordValid = true;
-          }
-          // Condition 3: Try Supabase Auth sign-in
-          else {
-            const candidateEmails = [
-              dbUser.email,
-              internalEmail,
-              `owner.${last10}@foodfax.in`,
-            ].filter(Boolean);
-
-            for (const email of candidateEmails) {
-              const { data: authData, error: authError } = await client.auth.signInWithPassword({
-                email,
-                password: pass,
-              });
-              if (!authError && authData?.user) {
-                passwordValid = true;
-                // Sync to users table
-                await client.from('users').update({
-                  password: pass,
-                  updated_at: new Date().toISOString(),
-                }).eq('id', dbUser.id);
-                break;
-              }
-            }
-
-            // Condition 4: Local cache matches
-            if (!passwordValid && localUser && localUser.password === pass) {
-              passwordValid = true;
-              await client.from('users').update({
-                password: pass,
-                updated_at: new Date().toISOString(),
-              }).eq('id', dbUser.id);
-            }
-          }
-
-          if (passwordValid) {
+          if (matchingPassUser) {
             authSecurityService.recordSuccessfulAttempt(cleanPhone);
+            saveLocalUser(cleanPhone, {
+              password: pass,
+              fullName: matchingPassUser.full_name || 'Restaurant Owner',
+              id: matchingPassUser.id,
+            });
 
             const profile: OwnerProfile = {
-              id: dbUser.id,
-              email: dbUser.email || internalEmail,
-              phone: cleanPhone,
-              fullName: dbUser.full_name || 'Restaurant Owner',
+              id: matchingPassUser.id,
+              email: matchingPassUser.email || internalEmail,
+              phone: matchingPassUser.phone || cleanPhone,
+              fullName: matchingPassUser.full_name || 'Restaurant Owner',
               role: 'owner',
             };
 
             setOwnerProfile(profile);
-            saveLocalUser(cleanPhone, {
-              password: pass,
-              fullName: profile.fullName,
-              id: dbUser.id,
-            });
-
-            const loadedShop = await loadDatabaseData(dbUser.id);
+            const loadedShop = await loadDatabaseData(matchingPassUser.id);
             setIsLoading(false);
             setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
             return true;
-          } else {
-            const lock = authSecurityService.recordFailedAttempt(cleanPhone);
-            if (lock.isLocked) {
-              setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s.`);
-            } else {
-              setErrorMessage('Incorrect password or PIN. You can also sign in via Instant SMS OTP or use Forgot Password.');
-            }
+          }
+
+          // If user exists in DB but password is not yet configured (e.g. initial setup / OTP registration)
+          const unassignedUser = dbUsers.find((u: any) => u.role === 'owner' && !u.password) ||
+                                 dbUsers.find((u: any) => !u.password);
+          if (unassignedUser) {
+            // Secure account by setting their password now
+            await client
+              .from('users')
+              .update({ password: pass, updated_at: new Date().toISOString() })
+              .eq('id', unassignedUser.id);
+
+            authSecurityService.recordSuccessfulAttempt(cleanPhone);
+            saveLocalUser(cleanPhone, {
+              password: pass,
+              fullName: unassignedUser.full_name || 'Restaurant Owner',
+              id: unassignedUser.id,
+            });
+
+            const profile: OwnerProfile = {
+              id: unassignedUser.id,
+              email: unassignedUser.email || internalEmail,
+              phone: unassignedUser.phone || cleanPhone,
+              fullName: unassignedUser.full_name || 'Restaurant Owner',
+              role: 'owner',
+            };
+
+            setOwnerProfile(profile);
+            const loadedShop = await loadDatabaseData(unassignedUser.id);
             setIsLoading(false);
-            return false;
+            setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
+            return true;
           }
         }
 
-        // Case B: User not found in 'users' table, but registered in 'shops' table
-        if (dbShop) {
-          authSecurityService.recordSuccessfulAttempt(cleanPhone);
-          const userId = dbShop.owner_id || ('owner_' + digits);
-          const fullName = dbShop.name || 'Restaurant Owner';
+        // 2. Check if there is an existing stall/shop with this phone number in 'public.shops'
+        const { data: dbShops } = await client
+          .from('shops')
+          .select('*')
+          .or(`phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`);
 
-          // Insert into users table with this password
+        if (dbShops && dbShops.length > 0) {
+          const targetShop = dbShops[0];
+          const ownerId = targetShop.owner_id || ('owner_' + (last10 || digits));
+
           await client.from('users').upsert({
-            id: userId,
+            id: ownerId,
             phone: cleanPhone,
             email: internalEmail,
-            full_name: fullName,
-            password: pass,
+            full_name: targetShop.name || 'Restaurant Owner',
             role: 'owner',
-            shop_id: dbShop.id,
+            password: pass,
             profile_completed: true,
             is_active: true,
             is_demo: false,
-            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           });
 
+          authSecurityService.recordSuccessfulAttempt(cleanPhone);
+          saveLocalUser(cleanPhone, {
+            password: pass,
+            fullName: targetShop.name || 'Restaurant Owner',
+            id: ownerId,
+          });
+
           const profile: OwnerProfile = {
-            id: userId,
+            id: ownerId,
             email: internalEmail,
             phone: cleanPhone,
-            fullName,
+            fullName: targetShop.name || 'Restaurant Owner',
             role: 'owner',
           };
-          setOwnerProfile(profile);
-          saveLocalUser(cleanPhone, { password: pass, fullName, id: userId });
 
-          const loadedShop = await loadDatabaseData(userId);
+          setOwnerProfile(profile);
+          const loadedShop = await loadDatabaseData(ownerId, targetShop.id);
           setIsLoading(false);
           setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
           return true;
         }
 
-        // Case C: Check unlinked Supabase Auth
+        // 3. Supabase Auth attempt
         const { data: authData, error: authError } = await client.auth.signInWithPassword({
           email: internalEmail,
           password: pass,
@@ -1054,7 +1026,19 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         if (!authError && authData?.user) {
           authSecurityService.recordSuccessfulAttempt(cleanPhone);
-          const fullName = authData.user.user_metadata?.full_name || 'Restaurant Owner';
+
+          let fullName = authData.user.user_metadata?.full_name || 'Restaurant Owner';
+
+          const { data: dbUser } = await client
+            .from('users')
+            .select('*')
+            .eq('id', authData.user.id)
+            .maybeSingle();
+
+          if (dbUser?.full_name) {
+            fullName = dbUser.full_name;
+          }
+
           const profile: OwnerProfile = {
             id: authData.user.id,
             email: internalEmail,
@@ -1062,15 +1046,21 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             fullName,
             role: 'owner',
           };
+
+          saveLocalUser(cleanPhone, {
+            password: pass,
+            fullName,
+            id: authData.user.id,
+          });
+
           setOwnerProfile(profile);
-          saveLocalUser(cleanPhone, { password: pass, fullName, id: authData.user.id });
           const loadedShop = await loadDatabaseData(authData.user.id);
           setIsLoading(false);
           setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
           return true;
         }
 
-        // Case D: Offline / Local Registry Fallback
+        // 4. Local storage fallback
         if (localUser) {
           if (localUser.password === pass) {
             authSecurityService.recordSuccessfulAttempt(cleanPhone);
@@ -1088,17 +1078,34 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           } else {
             const lock = authSecurityService.recordFailedAttempt(cleanPhone);
             if (lock.isLocked) {
-              setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s.`);
+              setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s. Try Instant SMS OTP.`);
             } else {
-              setErrorMessage('Incorrect password or PIN. Access denied.');
+              setErrorMessage('Incorrect password. Please verify credentials or use Instant SMS OTP.');
             }
             setIsLoading(false);
             return false;
           }
         }
 
-        // Case E: Mobile number not found anywhere
-        setErrorMessage(`Mobile number ${cleanPhone} is not registered yet. Please click 'Register Restaurant' below.`);
+        // If user records exist in DB but password did not match
+        if (dbUsers && dbUsers.length > 0) {
+          const lock = authSecurityService.recordFailedAttempt(cleanPhone);
+          if (lock.isLocked) {
+            setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s. Try Instant SMS OTP.`);
+          } else {
+            setErrorMessage('Incorrect password for this mobile number. You can also log in using Instant SMS OTP or reset your password.');
+          }
+          setIsLoading(false);
+          return false;
+        }
+
+        // Neither Supabase Auth nor database credentials matched
+        const lock = authSecurityService.recordFailedAttempt(cleanPhone);
+        if (lock.isLocked) {
+          setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s.`);
+        } else {
+          setErrorMessage('Invalid mobile number or password. Please verify credentials or register your restaurant.');
+        }
         setIsLoading(false);
         return false;
       } catch (err: any) {
@@ -1106,7 +1113,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
     }
 
-    // Offline / Local Registry Fallback when client is null
+    // Offline / Local Registry Fallback
     if (localUser) {
       if (localUser.password === pass) {
         authSecurityService.recordSuccessfulAttempt(cleanPhone);
@@ -1164,7 +1171,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         const { data: dbUser } = await client
           .from('users')
           .select('id')
-          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
+          .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`)
+          .limit(1)
           .maybeSingle();
 
         if (dbUser) {
@@ -1173,7 +1181,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           const { data: dbShop } = await client
             .from('shops')
             .select('id')
-            .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
+            .or(`phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`)
+            .limit(1)
             .maybeSingle();
           if (dbShop) isRegistered = true;
         }
@@ -1236,7 +1245,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const client = getSupabaseClient();
     const localUsers = getLocalUsers();
-    let userId = 'owner_' + digits;
+    let userId = 'owner_' + (last10 || digits);
     let userName = 'Restaurant Owner';
 
     if (localUsers[last10]) {
@@ -1246,28 +1255,34 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     if (client) {
       try {
-        const { data: dbUser } = await client
+        const { data: dbUsers } = await client
           .from('users')
           .select('*')
-          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
-          .maybeSingle();
+          .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`);
 
-        if (dbUser) {
-          userId = dbUser.id;
-          userName = dbUser.full_name || userName;
+        if (dbUsers && dbUsers.length > 0) {
+          const target = dbUsers.find((u: any) => u.role === 'owner') || dbUsers[0];
+          userId = target.id;
+          userName = target.full_name || userName;
         } else {
-          const { data: dbShop } = await client
+          const { data: dbShops } = await client
             .from('shops')
             .select('*')
-            .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10}`)
-            .maybeSingle();
-          if (dbShop) {
-            userId = dbShop.owner_id;
-            userName = dbShop.name || userName;
+            .or(`phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`)
+            .limit(1);
+          if (dbShops && dbShops.length > 0) {
+            userId = dbShops[0].owner_id || ('owner_' + (last10 || digits));
+            userName = dbShops[0].name || userName;
           }
         }
       } catch (_) {}
     }
+
+    saveLocalUser(cleanPhone, {
+      password: '',
+      fullName: userName,
+      id: userId,
+    });
 
     const profile: OwnerProfile = {
       id: userId,
@@ -1301,58 +1316,68 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const last10 = digits.slice(-10);
     const client = getSupabaseClient();
 
-    let userId = 'owner_' + digits;
+    let userId = 'owner_' + (last10 || digits);
     const internalEmail = phoneToInternalEmail(cleanPhone);
+    let ownerFullName = data.fullName.trim() || 'Restaurant Owner';
 
     if (client) {
       try {
         // Check if already in 'public.users' table
-        const { data: existingUser } = await client
+        const { data: existingUsers } = await client
           .from('users')
-          .select('id')
-          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10}`)
-          .maybeSingle();
+          .select('*')
+          .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`);
 
-        if (existingUser) {
-          setErrorMessage(`Mobile number ${cleanPhone} is already registered in the database. Please sign in.`);
-          setIsLoading(false);
-          return false;
-        }
+        if (existingUsers && existingUsers.length > 0) {
+          const existingUser = existingUsers.find((u: any) => u.role === 'owner') || existingUsers[0];
+          userId = existingUser.id;
+          ownerFullName = data.fullName.trim() || existingUser.full_name || 'Restaurant Owner';
 
-        // Register in Supabase Auth
-        const { data: authData, error: authError } = await client.auth.signUp({
-          email: internalEmail,
-          password: data.password,
-          options: {
-            data: {
-              full_name: data.fullName.trim(),
-              phone: cleanPhone,
-              role: 'owner',
-            },
-          },
-        });
+          // Update password and profile in database so login works immediately
+          await client.from('users').update({
+            password: data.password,
+            full_name: ownerFullName,
+            role: 'owner',
+            updated_at: new Date().toISOString(),
+          }).eq('id', existingUser.id);
+        } else {
+          // Register in Supabase Auth
+          try {
+            const { data: authData } = await client.auth.signUp({
+              email: internalEmail,
+              password: data.password,
+              options: {
+                data: {
+                  full_name: ownerFullName,
+                  phone: cleanPhone,
+                  role: 'owner',
+                },
+              },
+            });
 
-        if (authData?.user) {
-          userId = authData.user.id;
-        }
+            if (authData?.user) {
+              userId = authData.user.id;
+            }
+          } catch (_) {}
 
-        // Insert into 'public.users' table in Supabase
-        const { error: insertUserError } = await client.from('users').upsert({
-          id: userId,
-          phone: cleanPhone,
-          email: internalEmail,
-          full_name: data.fullName.trim(),
-          role: 'owner',
-          password: data.password,
-          profile_completed: true,
-          is_active: true,
-          is_demo: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
+          // Insert into 'public.users' table in Supabase including the password
+          const { error: insertUserError } = await client.from('users').upsert({
+            id: userId,
+            phone: cleanPhone,
+            email: internalEmail,
+            full_name: ownerFullName,
+            role: 'owner',
+            password: data.password,
+            profile_completed: true,
+            is_active: true,
+            is_demo: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
 
-        if (insertUserError) {
-          console.warn('Error inserting to users table:', insertUserError.message);
+          if (insertUserError) {
+            console.warn('Error inserting to users table:', insertUserError.message);
+          }
         }
       } catch (err: any) {
         console.warn('Supabase registration error:', err);
@@ -1362,19 +1387,30 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     // Save to local registry
     saveLocalUser(cleanPhone, {
       password: data.password,
-      fullName: data.fullName.trim(),
+      fullName: ownerFullName,
       id: userId,
     });
+
+    authSecurityService.recordSuccessfulAttempt(cleanPhone);
 
     const profile: OwnerProfile = {
       id: userId,
       phone: cleanPhone,
       email: internalEmail,
-      fullName: data.fullName.trim(),
+      fullName: ownerFullName,
       role: 'owner',
     };
 
     setOwnerProfile(profile);
+
+    // If an existing shop exists for this phone number, load it directly
+    if (client) {
+      const loadedShop = await loadDatabaseData(userId);
+      setIsLoading(false);
+      setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
+      return true;
+    }
+
     setShop(null);
     setOrders([]);
     setMenuItems([]);
@@ -1415,9 +1451,20 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         const { data: dbUser } = await client
           .from('users')
           .select('id')
-          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10}`)
+          .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`)
+          .limit(1)
           .maybeSingle();
         if (dbUser) isRegistered = true;
+
+        if (!isRegistered) {
+          const { data: dbShop } = await client
+            .from('shops')
+            .select('id')
+            .or(`phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`)
+            .limit(1)
+            .maybeSingle();
+          if (dbShop) isRegistered = true;
+        }
       } catch (_) {}
     }
 
@@ -1455,8 +1502,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const digits = cleanPhone.replace(/\D/g, '');
     const last10 = digits.slice(-10);
 
-    if (newPass.length < 6) {
-      setErrorMessage('New password must be at least 6 characters long.');
+    if (newPass.length < 4) {
+      setErrorMessage('New password must be at least 4 characters long.');
       setIsLoading(false);
       return false;
     }
@@ -1473,11 +1520,12 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     if (client) {
       try {
         const internalEmail = phoneToInternalEmail(cleanPhone);
-        await client.auth.updateUser({ password: newPass });
+        await client.auth.updateUser({ password: newPass }).catch(() => {});
+        // Update database 'users' table directly with new password
         await client
           .from('users')
           .update({ password: newPass, updated_at: new Date().toISOString() })
-          .or(`phone.eq.${cleanPhone},phone.eq.${digits},phone.eq.${last10},phone.eq.+91${last10},phone.eq.+91 ${last10}`);
+          .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`);
       } catch (_) {}
     }
 

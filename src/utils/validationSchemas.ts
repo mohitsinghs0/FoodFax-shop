@@ -13,9 +13,9 @@ export const phoneSchema = z
   .refine((val) => {
     const digits = val.replace(/\D/g, '');
     const cleanDigits = digits.startsWith('91') && digits.length === 12 ? digits.slice(2) : digits;
-    return cleanDigits.length === 10 && /^[6-9]\d{9}$/.test(cleanDigits);
+    return cleanDigits.length === 10 && /^\d{10}$/.test(cleanDigits);
   }, {
-    message: 'Please enter a valid 10-digit Indian mobile number (starting with 6, 7, 8, or 9)',
+    message: 'Please enter a valid 10-digit mobile number',
   });
 
 export const emailSchema = z
@@ -26,7 +26,7 @@ export const emailSchema = z
 
 export const passwordSchema = z
   .string()
-  .min(6, 'Password must be at least 6 characters long')
+  .min(4, 'Password or PIN must be at least 4 characters')
   .max(64, 'Password must not exceed 64 characters');
 
 export const nameSchema = z

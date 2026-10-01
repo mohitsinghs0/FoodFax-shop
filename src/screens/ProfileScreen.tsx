@@ -3,6 +3,7 @@ import { useOwnerApp } from '../context/OwnerAppContext';
 import { CustomizeLayoutModal } from '../components/CustomizeLayoutModal';
 import { ShopLocationPickerModal } from '../components/ShopLocationPickerModal';
 import { GoogleMapsLocationPicker } from '../components/GoogleMapsLocationPicker';
+import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { formatLocationRelativeTime } from '../utils/locationUtils';
 import { 
   ArrowLeft, 
@@ -188,7 +189,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </div>
                 <div>
                   <h4 className="text-[13px] font-black uppercase tracking-wider text-white">
-                    Location &amp; Stall Settings
+                    Location Settings
                   </h4>
                   <p className="text-[11px] text-slate-400">
                     Live stall status, discovery radar &amp; Google Maps spot

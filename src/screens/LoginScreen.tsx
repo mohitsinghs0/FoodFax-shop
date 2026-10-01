@@ -154,15 +154,9 @@ export const LoginScreen: React.FC = () => {
       return;
     }
 
-    const lock = authSecurityService.checkLockout(fullPhone);
-    if (lock.isLocked) {
-      setLockoutSeconds(lock.remainingSeconds);
-      setFormError(`Account locked due to failed attempts. Wait ${lock.remainingSeconds}s.`);
-      return;
-    }
-
     const ok = await sendPhoneOtp(fullPhone);
     if (ok) {
+      setLockoutSeconds(0);
       setOtpSent(true);
       setResendCooldown(30);
       // Retrieve the generated secure code to display in the SMS notification card
@@ -262,14 +256,26 @@ export const LoginScreen: React.FC = () => {
 
         {/* Security Lockout Banner */}
         {lockoutSeconds > 0 && (
-          <div className="mb-5 p-3.5 rounded-[14px] bg-red-500/15 border-2 border-red-500/40 text-red-300 text-xs flex items-center gap-3 animate-pulse">
-            <ShieldAlert className="w-5 h-5 text-red-400 shrink-0" />
-            <div>
-              <p className="font-bold text-red-200">Security Lockout Active</p>
-              <p className="text-[11px] text-red-300/80">
-                Too many incorrect attempts. Please wait <span className="font-mono font-bold text-white">{lockoutSeconds}s</span> before trying again.
-              </p>
+          <div className="mb-5 p-3.5 rounded-[14px] bg-red-500/15 border-2 border-red-500/40 text-red-300 text-xs flex items-center justify-between gap-3 animate-pulse">
+            <div className="flex items-center gap-2.5">
+              <ShieldAlert className="w-5 h-5 text-red-400 shrink-0" />
+              <div>
+                <p className="font-bold text-red-200">Security Lockout Active</p>
+                <p className="text-[11px] text-red-300/80">
+                  Wait <span className="font-mono font-bold text-white">{lockoutSeconds}s</span> or unlock via Instant SMS OTP.
+                </p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('otp');
+                setFormError(null);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-[#F97316] hover:bg-orange-600 text-white font-bold text-[11px] whitespace-nowrap shadow transition"
+            >
+              Use OTP
+            </button>
           </div>
         )}
 

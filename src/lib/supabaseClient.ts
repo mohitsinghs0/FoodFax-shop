@@ -5,8 +5,7 @@ const supabaseUrl: string =
   import.meta.env.VITE_SUPABASE_URL || 'https://aftmqdmiwvpbpsdmsfbu.supabase.co';
 
 const supabaseAnonKey: string = 
-  import.meta.env.VITE_SUPABASE_ANON_KEY || 
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmdG1xZG1pd3ZwYnBzZG1zZmJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwOTA4NDgsImV4cCI6MjEwNTY2Njg0OH0.c6_X6H2aLyYMH_Sg9EA9tVQr-tpHY8s9Nyjo_HznBlE';
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_O-f6YGUbj6hqHYBlwEhE5g_QVrnke9m';
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('⚠️ Supabase URL or Anon Key is missing in environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY).');
