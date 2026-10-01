@@ -48,9 +48,15 @@ const MainAppContent: React.FC = () => {
     hasCompletedShopSetup &&
     !['splash', 'onboarding', 'login', 'register', 'shop_setup'].includes(activeScreen);
 
-  // Strict Anti-Bypass Guard: If user is not authenticated and attempts to view an internal screen, force login
+  // Strict Anti-Bypass & Safe Routing Guard:
+  // 1. If not authenticated, force public screen or login.
+  // 2. If authenticated but has not completed shop setup, force shop_setup unless on profile.
   const isPublicScreen = ['splash', 'onboarding', 'login', 'register'].includes(activeScreen);
-  const effectiveScreen = !isAuthenticated && !isPublicScreen ? 'login' : activeScreen;
+  const effectiveScreen = !isAuthenticated
+    ? (isPublicScreen ? activeScreen : 'login')
+    : (!hasCompletedShopSetup && !['shop_setup', 'profile'].includes(activeScreen)
+      ? 'shop_setup'
+      : activeScreen);
 
   return (
     <MobileFrame>

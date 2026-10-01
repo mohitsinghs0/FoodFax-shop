@@ -147,7 +147,7 @@ const OwnerAppContext = createContext<OwnerAppContextType | undefined>(undefined
 
 // Helper for standard internal email format for Supabase Auth
 function phoneToInternalEmail(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
+  const digits = phone.replace(/\D/g, '').slice(-10);
   return `ff.owner.${digits}@foodfax.local`;
 }
 
@@ -502,7 +502,13 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         minimumOrder: 0,
         acceptsTakeaway: true,
         acceptsDineIn: s.table_service_available ?? true,
-        acceptsDelivery: false,
+        acceptsDelivery: s.accepts_delivery ?? false,
+        isMobileStall: s.is_mobile_stall ?? (s.stall_type?.toLowerCase().includes('thela') || s.stall_type?.toLowerCase().includes('stall')),
+        locationAccuracyMeters: s.location_accuracy_meters,
+        lastLocationUpdatedAt: s.last_location_updated_at,
+        deliveryRadiusKm: s.delivery_radius_km ?? 3,
+        deliveryFeeType: s.delivery_fee_type || 'free',
+        deliveryFeeAmount: s.delivery_fee_amount ?? 0,
         createdAt: s.created_at,
       }));
 
@@ -604,15 +610,20 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
 
         setActiveScreen((prev) => (['splash', 'login', 'register'].includes(prev) ? 'dashboard' : prev));
+        return targetShop;
       } else {
         // Shop not created yet
+        setShop(null);
+        localStorage.removeItem('foodfax_owner_shop');
         setOrders([]);
         setMenuCategories(DEFAULT_MENU_CATEGORIES);
         setMenuItems([]);
         setActiveScreen('shop_setup');
+        return null;
       }
     } catch (err) {
       console.warn('Error loading Supabase database data:', err);
+      return null;
     }
   }, []);
 
@@ -924,9 +935,9 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           };
 
           setOwnerProfile(profile);
-          await loadDatabaseData(authData.user.id);
+          const loadedShop = await loadDatabaseData(authData.user.id);
           setIsLoading(false);
-          setActiveScreenState('dashboard');
+          setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
           return true;
         }
 
@@ -941,9 +952,9 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
               role: 'owner',
             };
             setOwnerProfile(profile);
-            await loadDatabaseData(localUser.id);
+            const loadedShop = await loadDatabaseData(localUser.id);
             setIsLoading(false);
-            setActiveScreenState('dashboard');
+            setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
             return true;
           } else {
             const lock = authSecurityService.recordFailedAttempt(cleanPhone);
@@ -983,7 +994,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         };
         setOwnerProfile(profile);
         setIsLoading(false);
-        setActiveScreenState('dashboard');
+        setActiveScreenState(shop ? 'dashboard' : 'shop_setup');
         return true;
       } else {
         const lock = authSecurityService.recordFailedAttempt(cleanPhone);
@@ -1143,7 +1154,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     setOwnerProfile(profile);
 
     if (client) {
-      await loadDatabaseData(userId);
+      const loadedShop = await loadDatabaseData(userId);
+      setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
     } else {
       setActiveScreenState(shop ? 'dashboard' : 'shop_setup');
     }
@@ -1401,7 +1413,14 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       minimumOrder: 0,
       acceptsTakeaway: true,
       acceptsDineIn: shopData.acceptsDineIn ?? shop?.acceptsDineIn ?? true,
-      acceptsDelivery: false,
+      acceptsDelivery: shopData.acceptsDelivery ?? shop?.acceptsDelivery ?? false,
+      isMapSpotActive: shopData.isMapSpotActive ?? shop?.isMapSpotActive ?? true,
+      isMobileStall: shopData.isMobileStall ?? shop?.isMobileStall ?? false,
+      locationAccuracyMeters: shopData.locationAccuracyMeters ?? shop?.locationAccuracyMeters,
+      lastLocationUpdatedAt: shopData.lastLocationUpdatedAt || shop?.lastLocationUpdatedAt,
+      deliveryRadiusKm: shopData.deliveryRadiusKm ?? shop?.deliveryRadiusKm ?? 3,
+      deliveryFeeType: shopData.deliveryFeeType || shop?.deliveryFeeType || 'free',
+      deliveryFeeAmount: shopData.deliveryFeeAmount ?? shop?.deliveryFeeAmount ?? 0,
       createdAt: shop?.createdAt || new Date().toISOString(),
     };
 
@@ -1437,6 +1456,9 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           pincode: newShop.pincode || null,
           latitude: newShop.latitude || null,
           longitude: newShop.longitude || null,
+          location_accuracy_meters: newShop.locationAccuracyMeters || null,
+          last_location_updated_at: newShop.lastLocationUpdatedAt || null,
+          is_mobile_stall: newShop.isMobileStall ?? false,
           upi_id: newShop.upiId || null,
           opening_time: newShop.openingTime || '10:00 AM',
           closing_time: newShop.closingTime || '10:00 PM',
@@ -1444,6 +1466,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           is_active: true,
           is_rush_hour: newShop.isRushMode,
           table_service_available: newShop.acceptsDineIn,
+          accepts_delivery: newShop.acceptsDelivery,
+          delivery_radius_km: newShop.deliveryRadiusKm || 3,
+          delivery_fee_type: newShop.deliveryFeeType || 'free',
+          delivery_fee_amount: newShop.deliveryFeeAmount || 0,
           preparation_time_minutes: '5-10',
           is_demo: false,
           updated_at: new Date().toISOString(),

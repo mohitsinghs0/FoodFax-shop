@@ -80,6 +80,7 @@ export interface Shop {
   ownerId: string;
   name: string;
   shopType?: string;
+  isMobileStall?: boolean;
   description?: string;
   phone?: string;
   address?: string;
@@ -89,6 +90,8 @@ export interface Shop {
   pincode?: string;
   latitude?: number;
   longitude?: number;
+  locationAccuracyMeters?: number;
+  lastLocationUpdatedAt?: string;
   openingTime?: string;
   closingTime?: string;
   upiId?: string;
@@ -101,6 +104,15 @@ export interface Shop {
   acceptsTakeaway: boolean;
   acceptsDineIn: boolean;
   acceptsDelivery: boolean;
+  isMapSpotActive?: boolean;
+  deliveryRadiusKm?: number;
+  deliveryFeeType?: 'free' | 'fixed';
+  deliveryFeeAmount?: number;
+  rating?: number;
+  totalReviews?: number;
+  preparationTimeMinutes?: string;
+  distanceMeters?: number;
+  distanceKm?: number;
   createdAt?: string;
 }
 
