@@ -48,7 +48,7 @@ interface OwnerAppContextType {
   togglePushNotifications: () => Promise<boolean>;
   pushPermission: NotificationPermission;
   triggerTestPushNotification: () => void;
-  loginWithPhone: (phone: string, password: string) => Promise<boolean>;
+  loginWithPhone: (phone: string, password: string) => Promise<boolean | { success: boolean; error?: string }>;
   sendPhoneOtp: (phone: string) => Promise<boolean>;
   verifyPhoneOtp: (phone: string, token: string) => Promise<boolean>;
   registerWithPhone: (data: { phone: string; password: string; fullName: string }) => Promise<boolean>;
@@ -79,6 +79,8 @@ interface OwnerAppContextType {
   requestPasswordReset: (phone: string) => Promise<{ success: boolean; message: string; otp?: string }>;
   resetPasswordWithOtp: (phone: string, token: string, newPass: string) => Promise<boolean>;
   resetOtpCode: string | null;
+  checkKycStatus: () => Promise<Shop | null>;
+  getSupabaseClient: () => any;
 }
 
 // Maps raw database record from Supabase 'public.orders' table to UI OwnerOrder format
@@ -481,6 +483,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         id: s.id,
         ownerId: s.owner_id || userId,
         name: s.name,
+        slug: s.slug || (s.name ? s.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : undefined),
         shopType: s.stall_type || 'Restaurant',
         description: s.description,
         phone: s.phone || s.contact_phone,
@@ -509,6 +512,13 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         deliveryRadiusKm: s.delivery_radius_km ?? 3,
         deliveryFeeType: s.delivery_fee_type || 'free',
         deliveryFeeAmount: s.delivery_fee_amount ?? 0,
+        is_active: s.is_active,
+        kycStatus: s.kyc_status || (s.is_active === true ? 'approved' : (s.kyc_status === 'rejected' || s.rejection_reason || (typeof s.featured_item === 'string' && s.featured_item.startsWith('KYC_REJECTED:')) ? 'rejected' : 'pending')),
+        kyc_status: s.kyc_status,
+        isVerified: s.is_active === true || s.kyc_status === 'approved',
+        kycRejectionReason: s.rejection_reason || s.kyc_rejection_reason || (typeof s.featured_item === 'string' && s.featured_item.startsWith('KYC_REJECTED:') ? s.featured_item.replace('KYC_REJECTED:', '').trim() : undefined),
+        rejection_reason: s.rejection_reason || s.kyc_rejection_reason,
+        featured_item: s.featured_item,
         createdAt: s.created_at,
       }));
 
@@ -523,6 +533,26 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       setAvailableShops(targetShop ? [targetShop] : []);
 
       if (targetShop) {
+        // Restore local dining tables and sections configuration
+        const savedShopRaw = localStorage.getItem('foodfax_owner_shop');
+        if (savedShopRaw) {
+          try {
+            const parsedSaved = JSON.parse(savedShopRaw);
+            if (parsedSaved.id === targetShop.id) {
+              if (parsedSaved.diningTables) targetShop.diningTables = parsedSaved.diningTables;
+              if (parsedSaved.diningSections) targetShop.diningSections = parsedSaved.diningSections;
+              if (parsedSaved.logoUrl && !targetShop.logoUrl) targetShop.logoUrl = parsedSaved.logoUrl;
+              if (parsedSaved.bannerUrl && !targetShop.bannerUrl) targetShop.bannerUrl = parsedSaved.bannerUrl;
+            }
+          } catch (_) {}
+        }
+        if (!targetShop.diningTables || targetShop.diningTables.length === 0) {
+          targetShop.diningTables = ['Table 1', 'Table 2', 'Table 3', 'Table 4'];
+        }
+        if (!targetShop.diningSections || targetShop.diningSections.length === 0) {
+          targetShop.diningSections = ['Main Dining'];
+        }
+
         // Enforce cryptographic single-shop binding token
         await generateAndStoreShopBinding(userId, targetShop.id, ownerPhone);
         setShop(targetShop);
@@ -609,7 +639,18 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           indexedDbService.saveOrdersOffline(ordersData.map(mapDbOrderToOwnerOrder));
         }
 
-        setActiveScreen((prev) => (['splash', 'login', 'register'].includes(prev) ? 'dashboard' : prev));
+        const isApproved = Boolean(
+          targetShop.is_active === true ||
+          targetShop.kyc_status === 'approved' ||
+          targetShop.kycStatus === 'approved'
+        );
+
+        setActiveScreen((prev) => {
+          if (prev === 'splash') {
+            return isApproved ? 'dashboard' : 'kyc_status';
+          }
+          return prev;
+        });
         return targetShop;
       } else {
         // Shop not created yet
@@ -618,7 +659,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         setOrders([]);
         setMenuCategories(DEFAULT_MENU_CATEGORIES);
         setMenuItems([]);
-        setActiveScreen('shop_setup');
+        setActiveScreen((prev) => (prev === 'splash' ? 'login' : prev));
         return null;
       }
     } catch (err) {
@@ -874,7 +915,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, []);
 
   // AUTH: Login with Phone & Password (Enforces strict credential validation - NO BYPASS)
-  const loginWithPhone = async (phone: string, pass: string): Promise<boolean> => {
+  const loginWithPhone = async (phone: string, pass: string): Promise<boolean | { success: boolean; error?: string }> => {
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -882,266 +923,168 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const digits = cleanPhone.replace(/\D/g, '');
     const last10 = digits.slice(-10);
 
+    if (!last10 || last10.length < 10) {
+      const err = 'Please enter a valid 10-digit mobile number.';
+      setErrorMessage(err);
+      setIsLoading(false);
+      return { success: false, error: err };
+    }
+
     // 1. Check Brute-Force Rate Limiting & Account Lockout
     const lockout = authSecurityService.checkLockout(cleanPhone);
     if (lockout.isLocked) {
-      setErrorMessage(`Account temporarily locked for security. Please try again in ${lockout.remainingSeconds} seconds, or switch to Instant SMS OTP.`);
+      const err = `Account temporarily locked for security. Please try again in ${lockout.remainingSeconds} seconds.`;
+      setErrorMessage(err);
       setIsLoading(false);
-      return false;
+      return { success: false, error: err };
     }
 
     if (!pass || pass.length < 4) {
-      setErrorMessage('Password must be at least 4 characters long.');
+      const err = 'Password must be at least 4 characters long.';
+      setErrorMessage(err);
       setIsLoading(false);
-      return false;
+      return { success: false, error: err };
     }
 
     const client = getSupabaseClient();
     const localUsers = getLocalUsers();
     const localUser = localUsers[last10];
 
+    // Find if user exists in database
+    let foundUser: any = null;
+    let foundShop: any = null;
+
     if (client) {
       try {
-        const internalEmail = phoneToInternalEmail(cleanPhone);
-
-        // 1. Direct database verification in 'public.users' table
-        // This guarantees login works across devices, localhost, and cloud environments!
         const { data: dbUsers } = await client
           .from('users')
           .select('*')
           .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`);
 
         if (dbUsers && dbUsers.length > 0) {
-          // Check for exact password match
-          const matchingPassUser = dbUsers.find(
-            (u: any) => u.password && u.password.trim() === pass.trim()
-          );
-
-          if (matchingPassUser) {
-            authSecurityService.recordSuccessfulAttempt(cleanPhone);
-            saveLocalUser(cleanPhone, {
-              password: pass,
-              fullName: matchingPassUser.full_name || 'Restaurant Owner',
-              id: matchingPassUser.id,
-            });
-
-            const profile: OwnerProfile = {
-              id: matchingPassUser.id,
-              email: matchingPassUser.email || internalEmail,
-              phone: matchingPassUser.phone || cleanPhone,
-              fullName: matchingPassUser.full_name || 'Restaurant Owner',
-              role: 'owner',
-            };
-
-            setOwnerProfile(profile);
-            const loadedShop = await loadDatabaseData(matchingPassUser.id);
-            setIsLoading(false);
-            setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
-            return true;
-          }
-
-          // If user exists in DB but password is not yet configured (e.g. initial setup / OTP registration)
-          const unassignedUser = dbUsers.find((u: any) => u.role === 'owner' && !u.password) ||
-                                 dbUsers.find((u: any) => !u.password);
-          if (unassignedUser) {
-            // Secure account by setting their password now
-            await client
-              .from('users')
-              .update({ password: pass, updated_at: new Date().toISOString() })
-              .eq('id', unassignedUser.id);
-
-            authSecurityService.recordSuccessfulAttempt(cleanPhone);
-            saveLocalUser(cleanPhone, {
-              password: pass,
-              fullName: unassignedUser.full_name || 'Restaurant Owner',
-              id: unassignedUser.id,
-            });
-
-            const profile: OwnerProfile = {
-              id: unassignedUser.id,
-              email: unassignedUser.email || internalEmail,
-              phone: unassignedUser.phone || cleanPhone,
-              fullName: unassignedUser.full_name || 'Restaurant Owner',
-              role: 'owner',
-            };
-
-            setOwnerProfile(profile);
-            const loadedShop = await loadDatabaseData(unassignedUser.id);
-            setIsLoading(false);
-            setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
-            return true;
-          }
+          foundUser = dbUsers.find((u: any) => {
+            const clean = (u.phone || '').replace(/\D/g, '');
+            return clean.endsWith(last10);
+          }) || null;
         }
 
-        // 2. Check if there is an existing stall/shop with this phone number in 'public.shops'
-        const { data: dbShops } = await client
-          .from('shops')
-          .select('*')
-          .or(`phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`);
-
-        if (dbShops && dbShops.length > 0) {
-          const targetShop = dbShops[0];
-          const ownerId = targetShop.owner_id || ('owner_' + (last10 || digits));
-
-          await client.from('users').upsert({
-            id: ownerId,
-            phone: cleanPhone,
-            email: internalEmail,
-            full_name: targetShop.name || 'Restaurant Owner',
-            role: 'owner',
-            password: pass,
-            profile_completed: true,
-            is_active: true,
-            is_demo: false,
-            updated_at: new Date().toISOString(),
-          });
-
-          authSecurityService.recordSuccessfulAttempt(cleanPhone);
-          saveLocalUser(cleanPhone, {
-            password: pass,
-            fullName: targetShop.name || 'Restaurant Owner',
-            id: ownerId,
-          });
-
-          const profile: OwnerProfile = {
-            id: ownerId,
-            email: internalEmail,
-            phone: cleanPhone,
-            fullName: targetShop.name || 'Restaurant Owner',
-            role: 'owner',
-          };
-
-          setOwnerProfile(profile);
-          const loadedShop = await loadDatabaseData(ownerId, targetShop.id);
-          setIsLoading(false);
-          setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
-          return true;
+        if (!foundUser) {
+          const { data: dbShops } = await client
+            .from('shops')
+            .select('*')
+            .or(`phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`);
+          if (dbShops && dbShops.length > 0) {
+            foundShop = dbShops.find((s: any) => {
+              const p1 = (s.phone || '').replace(/\D/g, '');
+              const p2 = (s.contact_phone || '').replace(/\D/g, '');
+              return p1.endsWith(last10) || p2.endsWith(last10);
+            }) || null;
+          }
         }
+      } catch (err) {
+        console.warn('Database user lookup error:', err);
+      }
+    }
 
-        // 3. Supabase Auth attempt
+    // If user is NOT registered in database and not in local cache -> REJECT WITH ERROR
+    if (!foundUser && !foundShop && !localUser) {
+      const notFoundErr = `Mobile number ${cleanPhone} is not registered. Please click 'Register Restaurant' below.`;
+      setErrorMessage(notFoundErr);
+      setIsLoading(false);
+      return { success: false, error: notFoundErr };
+    }
+
+    // Now verify password strictly
+    let passwordMatches = false;
+    let authenticatedUserId = '';
+    let authenticatedUserName = 'Restaurant Owner';
+    let authenticatedEmail = phoneToInternalEmail(cleanPhone);
+
+    if (foundUser) {
+      authenticatedUserId = foundUser.id;
+      authenticatedUserName = foundUser.full_name || 'Restaurant Owner';
+      authenticatedEmail = foundUser.email || authenticatedEmail;
+
+      if (foundUser.password && foundUser.password.trim() === pass.trim()) {
+        passwordMatches = true;
+      }
+    } else if (foundShop) {
+      authenticatedUserId = foundShop.owner_id || ('owner_' + last10);
+      authenticatedUserName = foundShop.name || 'Restaurant Owner';
+      if (localUser && localUser.password === pass) {
+        passwordMatches = true;
+      }
+    }
+
+    // Also attempt Supabase Auth if client available and not yet matched
+    if (!passwordMatches && client) {
+      try {
         const { data: authData, error: authError } = await client.auth.signInWithPassword({
-          email: internalEmail,
+          email: authenticatedEmail,
           password: pass,
         });
-
         if (!authError && authData?.user) {
-          authSecurityService.recordSuccessfulAttempt(cleanPhone);
-
-          let fullName = authData.user.user_metadata?.full_name || 'Restaurant Owner';
-
-          const { data: dbUser } = await client
-            .from('users')
-            .select('*')
-            .eq('id', authData.user.id)
-            .maybeSingle();
-
-          if (dbUser?.full_name) {
-            fullName = dbUser.full_name;
-          }
-
-          const profile: OwnerProfile = {
-            id: authData.user.id,
-            email: internalEmail,
-            phone: cleanPhone,
-            fullName,
-            role: 'owner',
-          };
-
-          saveLocalUser(cleanPhone, {
-            password: pass,
-            fullName,
-            id: authData.user.id,
-          });
-
-          setOwnerProfile(profile);
-          const loadedShop = await loadDatabaseData(authData.user.id);
-          setIsLoading(false);
-          setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
-          return true;
+          passwordMatches = true;
+          authenticatedUserId = authData.user.id;
+          authenticatedUserName = authData.user.user_metadata?.full_name || authenticatedUserName;
         }
-
-        // 4. Local storage fallback
-        if (localUser) {
-          if (localUser.password === pass) {
-            authSecurityService.recordSuccessfulAttempt(cleanPhone);
-            const profile: OwnerProfile = {
-              id: localUser.id,
-              phone: cleanPhone,
-              fullName: localUser.fullName,
-              role: 'owner',
-            };
-            setOwnerProfile(profile);
-            const loadedShop = await loadDatabaseData(localUser.id);
-            setIsLoading(false);
-            setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
-            return true;
-          } else {
-            const lock = authSecurityService.recordFailedAttempt(cleanPhone);
-            if (lock.isLocked) {
-              setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s. Try Instant SMS OTP.`);
-            } else {
-              setErrorMessage('Incorrect password. Please verify credentials or use Instant SMS OTP.');
-            }
-            setIsLoading(false);
-            return false;
-          }
-        }
-
-        // If user records exist in DB but password did not match
-        if (dbUsers && dbUsers.length > 0) {
-          const lock = authSecurityService.recordFailedAttempt(cleanPhone);
-          if (lock.isLocked) {
-            setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s. Try Instant SMS OTP.`);
-          } else {
-            setErrorMessage('Incorrect password for this mobile number. You can also log in using Instant SMS OTP or reset your password.');
-          }
-          setIsLoading(false);
-          return false;
-        }
-
-        // Neither Supabase Auth nor database credentials matched
-        const lock = authSecurityService.recordFailedAttempt(cleanPhone);
-        if (lock.isLocked) {
-          setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s.`);
-        } else {
-          setErrorMessage('Invalid mobile number or password. Please verify credentials or register your restaurant.');
-        }
-        setIsLoading(false);
-        return false;
-      } catch (err: any) {
-        console.warn('Login validation error:', err);
-      }
+      } catch (_) {}
     }
 
-    // Offline / Local Registry Fallback
-    if (localUser) {
-      if (localUser.password === pass) {
-        authSecurityService.recordSuccessfulAttempt(cleanPhone);
-        const profile: OwnerProfile = {
-          id: localUser.id,
-          phone: cleanPhone,
-          fullName: localUser.fullName,
-          role: 'owner',
-        };
-        setOwnerProfile(profile);
-        setIsLoading(false);
-        setActiveScreenState(shop ? 'dashboard' : 'shop_setup');
-        return true;
-      } else {
-        const lock = authSecurityService.recordFailedAttempt(cleanPhone);
-        if (lock.isLocked) {
-          setErrorMessage(`Too many failed attempts! Account locked for ${lock.remainingSeconds}s.`);
-        } else {
-          setErrorMessage('Incorrect password or PIN. Access denied.');
-        }
-        setIsLoading(false);
-        return false;
-      }
+    // Local user cache verification
+    if (!passwordMatches && localUser && localUser.password === pass) {
+      passwordMatches = true;
+      authenticatedUserId = localUser.id || authenticatedUserId || ('owner_' + last10);
+      authenticatedUserName = localUser.fullName || authenticatedUserName;
     }
 
-    setErrorMessage(`Mobile number ${cleanPhone} is not registered. Please register your restaurant first.`);
+    if (!passwordMatches) {
+      const lock = authSecurityService.recordFailedAttempt(cleanPhone);
+      const wrongPassErr = lock.isLocked
+        ? `Too many incorrect password attempts! Account locked for ${lock.remainingSeconds}s.`
+        : 'Incorrect password. Please verify credentials or reset your password.';
+      setErrorMessage(wrongPassErr);
+      setIsLoading(false);
+      return { success: false, error: wrongPassErr };
+    }
+
+    // Password is VALID! Log user in
+    authSecurityService.recordSuccessfulAttempt(cleanPhone);
+    saveLocalUser(cleanPhone, {
+      password: pass,
+      fullName: authenticatedUserName,
+      id: authenticatedUserId,
+    });
+
+    const profile: OwnerProfile = {
+      id: authenticatedUserId,
+      email: authenticatedEmail,
+      phone: cleanPhone,
+      fullName: authenticatedUserName,
+      role: 'owner',
+    };
+    setOwnerProfile(profile);
+
+    const loadedShop = await loadDatabaseData(authenticatedUserId, foundShop?.id);
     setIsLoading(false);
-    return false;
+
+    // Determine target screen based on shop completion and KYC verification
+    if (!loadedShop || !loadedShop.name?.trim()) {
+      setActiveScreenState('shop_setup');
+    } else {
+      const isApproved = Boolean(
+        loadedShop.is_active === true ||
+        loadedShop.kyc_status === 'approved' ||
+        loadedShop.kycStatus === 'approved'
+      );
+      if (isApproved) {
+        setActiveScreenState('dashboard');
+      } else {
+        setActiveScreenState('kyc_status');
+      }
+    }
+
+    return true;
   };
 
   // AUTH: Send Phone OTP (Generates cryptographically random 6-digit OTP tied to phone)
@@ -1292,13 +1235,23 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
     setOwnerProfile(profile);
 
-    if (client) {
-      const loadedShop = await loadDatabaseData(userId);
-      setActiveScreenState(loadedShop ? 'dashboard' : 'shop_setup');
-    } else {
-      setActiveScreenState(shop ? 'dashboard' : 'shop_setup');
-    }
+    const loadedShop = client ? await loadDatabaseData(userId) : shop;
     setIsLoading(false);
+
+    if (!loadedShop || !loadedShop.name?.trim()) {
+      setActiveScreenState('shop_setup');
+    } else {
+      const isApproved = Boolean(
+        loadedShop.is_active === true ||
+        loadedShop.kyc_status === 'approved' ||
+        loadedShop.kycStatus === 'approved'
+      );
+      if (isApproved) {
+        setActiveScreenState('dashboard');
+      } else {
+        setActiveScreenState('kyc_status');
+      }
+    }
     return true;
   };
 
@@ -1571,19 +1524,22 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       id: newShopId,
       ownerId: currentOwnerId,
       name: shopName,
-      shopType: shopData.shopType || shop?.shopType || 'Thela / Food Stall',
+      slug: shopData.slug || shop?.slug || (shopName ? shopName.toLowerCase().replace(/[^a-z0-9]+/g, '-') : undefined),
+      shopType: shopData.shopType || shop?.shopType || 'Food Stall / Food Cart',
       description: shopData.description ?? shop?.description,
       phone: shopData.phone || shop?.phone || ownerProfile?.phone,
       address: shopData.address ?? shop?.address,
       area: shopData.area ?? shop?.area,
-      city: shopData.city ?? shop?.city ?? 'Bengaluru',
-      state: shopData.state ?? shop?.state ?? 'Karnataka',
+      city: shopData.city ?? shop?.city ?? '',
+      state: shopData.state ?? shop?.state ?? '',
       pincode: shopData.pincode ?? shop?.pincode,
       latitude: shopData.latitude ?? shop?.latitude,
       longitude: shopData.longitude ?? shop?.longitude,
       openingTime: shopData.openingTime || shop?.openingTime || '10:00 AM',
       closingTime: shopData.closingTime || shop?.closingTime || '10:00 PM',
       upiId: shopData.upiId ?? shop?.upiId,
+      logoUrl: shopData.logoUrl !== undefined ? shopData.logoUrl : shop?.logoUrl,
+      bannerUrl: shopData.bannerUrl !== undefined ? shopData.bannerUrl : shop?.bannerUrl,
       isOpen: shopData.isOpen ?? shop?.isOpen ?? true,
       isRushMode: shopData.isRushMode ?? shop?.isRushMode ?? false,
       rushExtraMinutes: shopData.rushExtraMinutes ?? shop?.rushExtraMinutes ?? 15,
@@ -1591,6 +1547,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       acceptsTakeaway: true,
       acceptsDineIn: shopData.acceptsDineIn ?? shop?.acceptsDineIn ?? true,
       acceptsDelivery: shopData.acceptsDelivery ?? shop?.acceptsDelivery ?? false,
+      diningTables: shopData.diningTables ?? shop?.diningTables ?? ['Table 1', 'Table 2', 'Table 3', 'Table 4'],
+      diningSections: shopData.diningSections ?? shop?.diningSections ?? ['Main Dining'],
       isMapSpotActive: shopData.isMapSpotActive ?? shop?.isMapSpotActive ?? true,
       isMobileStall: shopData.isMobileStall ?? shop?.isMobileStall ?? false,
       locationAccuracyMeters: shopData.locationAccuracyMeters ?? shop?.locationAccuracyMeters,
@@ -1598,6 +1556,11 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       deliveryRadiusKm: shopData.deliveryRadiusKm ?? shop?.deliveryRadiusKm ?? 3,
       deliveryFeeType: shopData.deliveryFeeType || shop?.deliveryFeeType || 'free',
       deliveryFeeAmount: shopData.deliveryFeeAmount ?? shop?.deliveryFeeAmount ?? 0,
+      is_active: false,
+      kycStatus: 'pending',
+      isVerified: false,
+      kycRejectionReason: undefined,
+      rejection_reason: undefined,
       createdAt: shop?.createdAt || new Date().toISOString(),
     };
 
@@ -1622,8 +1585,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           owner_id: ownerProfile.id,
           name: newShop.name,
           slug,
-          stall_type: newShop.shopType || 'Thela / Food Stall',
+          stall_type: newShop.shopType || 'Food Stall / Food Cart',
           description: newShop.description || null,
+          image: newShop.logoUrl || null,
+          banner_image: newShop.bannerUrl || null,
           phone: newShop.phone || null,
           contact_phone: newShop.phone || null,
           address: newShop.address || null,
@@ -1640,7 +1605,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           opening_time: newShop.openingTime || '10:00 AM',
           closing_time: newShop.closingTime || '10:00 PM',
           is_open: newShop.isOpen,
-          is_active: true,
+          is_active: false, // Pending Admin KYC Verification
           is_rush_hour: newShop.isRushMode,
           table_service_available: newShop.acceptsDineIn,
           accepts_delivery: newShop.acceptsDelivery,
@@ -1666,6 +1631,9 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     if (ownerProfile) {
       await generateAndStoreShopBinding(ownerProfile.id, newShop.id, ownerProfile.phone);
     }
+    try {
+      localStorage.setItem('foodfax_owner_shop', JSON.stringify(newShop));
+    } catch (_) {}
     setAvailableShops([newShop]);
     setShop(newShop);
     setIsLoading(false);
@@ -2285,6 +2253,88 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     return true;
   };
 
+  const checkKycStatus = useCallback(async (): Promise<Shop | null> => {
+    if (!ownerProfile?.id) return null;
+    const client = getSupabaseClient();
+    if (!client) return shop;
+
+    try {
+      const targetShopId = shop?.id;
+      let query = client.from('shops').select('*');
+      if (targetShopId) {
+        query = query.eq('id', targetShopId);
+      } else {
+        query = query.eq('owner_id', ownerProfile.id);
+      }
+
+      const { data: dbShop } = await query.maybeSingle();
+      if (dbShop) {
+        const isApproved = Boolean(
+          dbShop.is_active === true ||
+          dbShop.kyc_status === 'approved'
+        );
+        const isRejected = Boolean(
+          !isApproved && (
+            dbShop.kyc_status === 'rejected' ||
+            dbShop.rejection_reason ||
+            dbShop.kyc_rejection_reason ||
+            (typeof dbShop.featured_item === 'string' && dbShop.featured_item.startsWith('KYC_REJECTED:'))
+          )
+        );
+        const rejectionReason =
+          dbShop.rejection_reason ||
+          dbShop.kyc_rejection_reason ||
+          (typeof dbShop.featured_item === 'string' && dbShop.featured_item.startsWith('KYC_REJECTED:')
+            ? dbShop.featured_item.replace('KYC_REJECTED:', '').trim()
+            : undefined);
+
+        const updatedShop: Shop = {
+          rushExtraMinutes: 15,
+          minimumOrder: 0,
+          acceptsTakeaway: true,
+          acceptsDineIn: true,
+          acceptsDelivery: false,
+          deliveryRadiusKm: 3,
+          deliveryFeeAmount: 0,
+          ...(shop || {}),
+          id: dbShop.id,
+          ownerId: dbShop.owner_id || ownerProfile.id,
+          name: dbShop.name,
+          phone: dbShop.phone || dbShop.contact_phone,
+          address: dbShop.address,
+          area: dbShop.area,
+          city: dbShop.city,
+          state: dbShop.state,
+          pincode: dbShop.pincode,
+          latitude: dbShop.latitude,
+          longitude: dbShop.longitude,
+          is_active: dbShop.is_active,
+          kycStatus: isApproved ? 'approved' : (isRejected ? 'rejected' : 'pending'),
+          kyc_status: dbShop.kyc_status,
+          isVerified: isApproved,
+          kycRejectionReason: rejectionReason,
+          rejection_reason: rejectionReason,
+          featured_item: dbShop.featured_item,
+          isOpen: dbShop.is_open ?? (shop?.isOpen ?? true),
+          isRushMode: dbShop.is_rush_hour ?? (shop?.isRushMode ?? false),
+        };
+
+        setShop(updatedShop);
+        try {
+          localStorage.setItem('foodfax_owner_shop', JSON.stringify(updatedShop));
+        } catch (_) {}
+
+        if (isApproved) {
+          setActiveScreen('dashboard');
+        }
+        return updatedShop;
+      }
+    } catch (err) {
+      console.warn('Error checking KYC status:', err);
+    }
+    return shop;
+  }, [ownerProfile?.id, shop]);
+
   const contextValue = useMemo<OwnerAppContextType>(
     () => ({
       activeScreen,
@@ -2341,6 +2391,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       requestPasswordReset,
       resetPasswordWithOtp,
       resetOtpCode,
+      checkKycStatus,
+      getSupabaseClient,
     }),
     [
       activeScreen,
@@ -2397,6 +2449,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       requestPasswordReset,
       resetPasswordWithOtp,
       resetOtpCode,
+      checkKycStatus,
     ]
   );
 

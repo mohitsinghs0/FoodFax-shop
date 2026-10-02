@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
 import { ShopLocationPickerModal } from '../components/ShopLocationPickerModal';
 import { formatLocationRelativeTime } from '../utils/locationUtils';
@@ -13,7 +13,11 @@ import {
   Clock, 
   Check, 
   Compass,
-  CreditCard
+  CreditCard,
+  Camera,
+  Upload,
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface ShopProfileModalProps {
@@ -26,6 +30,8 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
   const [name, setName] = useState(shop?.name || '');
   const [shopType, setShopType] = useState(shop?.shopType || 'Restaurant / Cafe');
   const [isMobileStall, setIsMobileStall] = useState<boolean>(shop?.isMobileStall ?? false);
+  const [photoUrl, setPhotoUrl] = useState(shop?.logoUrl || shop?.bannerUrl || '');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [description, setDescription] = useState(shop?.description || '');
   const [phone, setPhone] = useState(shop?.phone || '');
   const [address, setAddress] = useState(shop?.address || '');
@@ -45,6 +51,62 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
   const [locating, setLocating] = useState(false);
   const [showMapModal, setShowMapModal] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+
+  const photoFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Client-side photo compression and upload
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (JPG, PNG, WebP).');
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 1200;
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          setPhotoUrl(compressed);
+        } else {
+          setPhotoUrl(event.target?.result as string);
+        }
+        setIsUploadingPhoto(false);
+      };
+      img.onerror = () => {
+        setIsUploadingPhoto(false);
+        alert('Failed to process image file.');
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = () => {
+      setIsUploadingPhoto(false);
+      alert('Failed to read image file.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Update Current Stall Location (On-demand GPS, explicit click only)
   const handleUpdateCurrentLocation = () => {
@@ -136,6 +198,8 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
       longitude,
       locationAccuracyMeters: locationAccuracy,
       lastLocationUpdatedAt: lastLocationUpdated,
+      logoUrl: photoUrl,
+      bannerUrl: photoUrl,
     });
     onClose();
   };
@@ -188,7 +252,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
                 type="button"
                 onClick={() => {
                   setIsMobileStall(true);
-                  if (!shopType.includes('Stall')) setShopType('Food Stall / Thela / Food Cart');
+                  if (!shopType.includes('Stall')) setShopType('Food Stall / Food Cart');
                 }}
                 className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
                   isMobileStall
@@ -224,6 +288,93 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
               onChange={(e) => setShopType(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-3.5 py-2 text-xs text-slate-100 outline-none"
             />
+          </div>
+
+          {/* SHOP STOREFRONT PHOTO UPLOAD SECTION */}
+          <div className="p-4 rounded-2xl bg-[#131B2E] border border-[#1E293B] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-orange-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Shop Photo / Storefront
+                </h4>
+              </div>
+              {photoUrl && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-emerald-500/20 text-emerald-300">
+                  Added
+                </span>
+              )}
+            </div>
+
+            <input
+              ref={photoFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoUpload}
+            />
+
+            {photoUrl ? (
+              <div className="space-y-2.5">
+                <div className="relative w-full h-36 rounded-xl overflow-hidden border border-[#23304A] bg-[#0B0F19]">
+                  <img
+                    src={photoUrl}
+                    alt="Shop preview"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-2.5">
+                    <span className="text-[11px] font-bold text-white truncate">
+                      {name || 'Storefront Image'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isUploadingPhoto}
+                    onClick={() => photoFileInputRef.current?.click()}
+                    className="flex-1 py-2 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {isUploadingPhoto ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5" />
+                    )}
+                    <span>Change Photo</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isUploadingPhoto}
+                    onClick={() => setPhotoUrl('')}
+                    className="py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Remove</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => !isUploadingPhoto && photoFileInputRef.current?.click()}
+                className="w-full p-4 rounded-xl border border-dashed border-orange-500/40 hover:border-orange-500 bg-orange-500/5 hover:bg-orange-500/10 flex flex-col items-center justify-center text-center cursor-pointer transition group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-orange-500/15 flex items-center justify-center text-[#F97316] mb-1.5 group-hover:scale-105 transition">
+                  {isUploadingPhoto ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                </div>
+                <p className="text-xs font-bold text-white">
+                  {isUploadingPhoto ? 'Processing photo...' : 'Click to Upload Shop / Stall Photo'}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  JPG, PNG, WebP • Auto-optimized for customer app display
+                </p>
+              </div>
+            )}
           </div>
 
           {/* DEDICATED LOCATION SECTION (Section 2 Requirements) */}
@@ -350,7 +501,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
                 type="text"
                 value={area}
                 onChange={(e) => setArea(e.target.value)}
-                placeholder="e.g. Indiranagar"
+                placeholder="e.g. Bandra West"
                 className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-3.5 py-2 text-xs text-slate-100 outline-none"
               />
             </div>
@@ -360,7 +511,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                placeholder="e.g. Bengaluru"
+                placeholder="e.g. Mumbai"
                 className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-3.5 py-2 text-xs text-slate-100 outline-none"
               />
             </div>
@@ -372,7 +523,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
               type="text"
               value={pincode}
               onChange={(e) => setPincode(e.target.value)}
-              placeholder="560038"
+              placeholder="e.g. 400050"
               className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-3.5 py-2 text-xs text-slate-100 outline-none"
             />
           </div>

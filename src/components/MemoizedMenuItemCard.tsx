@@ -36,6 +36,20 @@ export const MemoizedMenuItemCard = memo<MemoizedMenuItemCardProps>(
             : 'bg-slate-900/50 border-slate-800/60 opacity-60'
         }`}
       >
+        {/* Dish Thumbnail (if present) */}
+        {item.imageUrl && (
+          <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-slate-800 border border-slate-700/60 shadow-sm relative">
+            <img
+              src={item.imageUrl}
+              alt={item.name}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
+          </div>
+        )}
+
         {/* Left Info: Veg icon, Name, Tag, Description, Price */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">

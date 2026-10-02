@@ -270,9 +270,9 @@ export const OrdersScreen: React.FC = () => {
         </div>
       </div>
 
-      <div className="px-4 py-3 space-y-3.5 max-w-md mx-auto">
+      <div className="px-4 lg:px-8 py-3 lg:py-6 space-y-3.5 lg:space-y-5 max-w-md lg:max-w-7xl mx-auto w-full">
         {/* Segmented Top Toggle: Active Orders vs Order History */}
-        <div className="bg-[#131B2E] border border-[#23304A] rounded-[14px] p-1 grid grid-cols-2">
+        <div className="bg-[#131B2E] border border-[#23304A] rounded-[14px] p-1 grid grid-cols-2 max-w-md">
           <button
             onClick={() => setViewMode('active')}
             className={`py-2 text-[12px] font-bold rounded-[10px] transition flex items-center justify-center gap-1.5 ${
@@ -396,7 +396,7 @@ export const OrdersScreen: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="space-y-3 pt-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3.5 lg:gap-4 pt-1">
             {displayedOrders.map((order) => {
               const isSelected = selectedOrderIds.has(order.id);
               const isMarkable = order.status !== 'ready' && ['pending', 'accepted', 'preparing'].includes(order.status);
@@ -569,8 +569,8 @@ export const OrdersScreen: React.FC = () => {
 
       {/* Floating Bottom Bulk Action Bar for Kitchen Staff */}
       {viewMode === 'active' && isBulkSelectMode && selectedOrderIds.size > 0 && (
-        <div className="fixed bottom-16 left-0 right-0 z-40 px-4 py-3 bg-[#0B0F19]/95 backdrop-blur-md border-t border-[#23304A] shadow-2xl">
-          <div className="max-w-md mx-auto flex items-center justify-between gap-3">
+        <div className="fixed bottom-16 lg:bottom-6 left-0 lg:left-auto right-0 lg:right-8 z-40 px-4 py-3 bg-[#0B0F19]/95 backdrop-blur-md border-t lg:border border-[#23304A] lg:rounded-2xl shadow-2xl">
+          <div className="max-w-md lg:max-w-xl mx-auto flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-bold text-white">
                 {selectedOrderIds.size} Order{selectedOrderIds.size > 1 ? 's' : ''} Selected

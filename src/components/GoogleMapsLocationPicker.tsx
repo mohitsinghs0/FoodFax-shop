@@ -38,16 +38,32 @@ interface GoogleMapsLocationPickerProps {
     longitude: number;
     address?: string;
     area?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
     accuracy?: number;
   }) => Promise<void> | void;
   height?: string;
   showSaveButton?: boolean;
 }
 
-// Controller component to pan & zoom using useMap()
+const POPULAR_CITIES = [
+  { name: 'Mumbai', lat: 19.0760, lng: 72.8777 },
+  { name: 'Delhi NCR', lat: 28.6139, lng: 77.2090 },
+  { name: 'Pune', lat: 18.5204, lng: 73.8567 },
+  { name: 'Bengaluru', lat: 12.9716, lng: 77.5946 },
+  { name: 'Hyderabad', lat: 17.3850, lng: 78.4867 },
+  { name: 'Kolkata', lat: 22.5726, lng: 88.3639 },
+  { name: 'Ahmedabad', lat: 23.0225, lng: 72.5714 },
+  { name: 'Chennai', lat: 13.0827, lng: 80.2707 },
+  { name: 'Jaipur', lat: 26.9124, lng: 75.7873 },
+  { name: 'Lucknow', lat: 26.8467, lng: 80.9462 },
+];
+
+// Controller component to pan & zoom on coordinates change
 const MapController: React.FC<{ targetLat: number; targetLng: number; zoom?: number }> = ({ 
-  targetLat, 
-  targetLng, 
+  targetLat,
+  targetLng,
   zoom 
 }) => {
   const map = useMap();
@@ -77,6 +93,9 @@ export const GoogleMapsLocationPicker: React.FC<GoogleMapsLocationPickerProps> =
   const [lng, setLng] = useState<number>(initialLng);
   const [addressLabel, setAddressLabel] = useState<string>(initialAddress || initialArea || 'Google Maps Pinned Location');
   const [detectedArea, setDetectedArea] = useState<string>(initialArea || '');
+  const [detectedCity, setDetectedCity] = useState<string>('');
+  const [detectedState, setDetectedState] = useState<string>('');
+  const [detectedPincode, setDetectedPincode] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [locating, setLocating] = useState<boolean>(false);
@@ -98,8 +117,48 @@ export const GoogleMapsLocationPicker: React.FC<GoogleMapsLocationPickerProps> =
     }
   }, [initialLat, initialLng, initialAddress]);
 
-  // Reverse geocoding to retrieve readable address when pin is moved
+  // Dual Reverse geocoding (Google Maps Geocoder primary + OSM Nominatim fallback)
   const reverseGeocode = useCallback(async (targetLat: number, targetLng: number) => {
+    // 1. Try Google Maps Geocoder if SDK is loaded
+    if (typeof window !== 'undefined' && (window as any).google?.maps?.Geocoder) {
+      try {
+        const geocoder = new (window as any).google.maps.Geocoder();
+        const response = await geocoder.geocode({ location: { lat: targetLat, lng: targetLng } });
+        if (response?.results?.[0]) {
+          const result = response.results[0];
+          const comps = result.address_components || [];
+          let road = '';
+          let sublocality = '';
+          let cityVal = '';
+          let stateVal = '';
+          let pincodeVal = '';
+
+          for (const c of comps) {
+            const types = c.types || [];
+            if (types.includes('route') || types.includes('street_address')) road = c.long_name;
+            if (types.includes('sublocality') || types.includes('sublocality_level_1') || types.includes('neighborhood')) {
+              sublocality = c.long_name;
+            }
+            if (types.includes('locality')) cityVal = c.long_name;
+            if (!cityVal && (types.includes('administrative_area_level_2') || types.includes('administrative_area_level_3'))) {
+              cityVal = c.long_name;
+            }
+            if (types.includes('administrative_area_level_1')) stateVal = c.long_name;
+            if (types.includes('postal_code')) pincodeVal = c.long_name;
+          }
+
+          const mainLabel = [road, sublocality, cityVal].filter(Boolean).join(', ') || result.formatted_address;
+          setAddressLabel(mainLabel);
+          if (sublocality) setDetectedArea(sublocality);
+          if (cityVal) setDetectedCity(cityVal);
+          if (stateVal) setDetectedState(stateVal);
+          if (pincodeVal) setDetectedPincode(pincodeVal);
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // 2. OpenStreetMap Nominatim Fallback
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${targetLat}&lon=${targetLng}&zoom=18&addressdetails=1`,
@@ -109,12 +168,16 @@ export const GoogleMapsLocationPicker: React.FC<GoogleMapsLocationPickerProps> =
         const data = await res.json();
         if (data && data.display_name) {
           const road = data.address?.road || data.address?.suburb || data.address?.neighbourhood || '';
-          const city = data.address?.city || data.address?.town || data.address?.state_district || '';
-          const label = [road, city].filter(Boolean).join(', ') || data.display_name.split(',').slice(0, 3).join(',');
+          const suburb = data.address?.suburb || data.address?.neighbourhood || data.address?.residential || '';
+          const cityVal = data.address?.city || data.address?.town || data.address?.village || data.address?.state_district || '';
+          const stateVal = data.address?.state || '';
+          const pincodeVal = data.address?.postcode || '';
+          const label = [road, suburb, cityVal].filter(Boolean).join(', ') || data.display_name.split(',').slice(0, 3).join(',');
           setAddressLabel(label);
-          if (data.address?.suburb || data.address?.neighbourhood) {
-            setDetectedArea(data.address.suburb || data.address.neighbourhood);
-          }
+          if (suburb) setDetectedArea(suburb);
+          if (cityVal) setDetectedCity(cityVal);
+          if (stateVal) setDetectedState(stateVal);
+          if (pincodeVal) setDetectedPincode(pincodeVal);
         }
       }
     } catch {
@@ -202,9 +265,26 @@ export const GoogleMapsLocationPicker: React.FC<GoogleMapsLocationPickerProps> =
 
     setIsSearching(true);
     setGpsErrorMsg(null);
+    const query = searchQuery.trim();
 
+    // 1. Try Google Maps Geocoder if available
+    if (typeof window !== 'undefined' && (window as any).google?.maps?.Geocoder) {
+      try {
+        const geocoder = new (window as any).google.maps.Geocoder();
+        const response = await geocoder.geocode({ address: query, componentRestrictions: { country: 'IN' } });
+        if (response?.results?.[0]) {
+          const loc = response.results[0].geometry.location;
+          const newLat = Number(loc.lat().toFixed(6));
+          const newLng = Number(loc.lng().toFixed(6));
+          handlePositionChange(newLat, newLng);
+          setIsSearching(false);
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // 2. OpenStreetMap Nominatim Search
     try {
-      const query = searchQuery.trim();
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&countrycodes=in&addressdetails=1`,
         { headers: { 'Accept-Language': 'en' } }
@@ -218,7 +298,7 @@ export const GoogleMapsLocationPicker: React.FC<GoogleMapsLocationPickerProps> =
           handlePositionChange(newLat, newLng);
           setAddressLabel(item.display_name.split(',').slice(0, 3).join(','));
         } else {
-          setGpsErrorMsg(`No exact match for "${query}". Try adding city name (e.g. "${query} Bangalore").`);
+          setGpsErrorMsg(`No exact match for "${query}". Try adding city name (e.g. "${query} Mumbai").`);
         }
       }
     } catch {
@@ -255,6 +335,9 @@ export const GoogleMapsLocationPicker: React.FC<GoogleMapsLocationPickerProps> =
         longitude: lng,
         address: addressLabel,
         area: detectedArea || initialArea,
+        city: detectedCity,
+        state: detectedState,
+        pincode: detectedPincode,
         accuracy: 8,
       });
       setSavedSuccess(true);
@@ -297,6 +380,24 @@ export const GoogleMapsLocationPicker: React.FC<GoogleMapsLocationPickerProps> =
             <span>Find</span>
           </button>
         </form>
+
+        {/* Quick City Jump Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar pt-0.5">
+          <span className="text-[10px] font-bold text-slate-400 shrink-0">Quick Jump:</span>
+          {POPULAR_CITIES.map((city) => (
+            <button
+              key={city.name}
+              type="button"
+              onClick={() => {
+                handlePositionChange(city.lat, city.lng);
+                setSearchQuery(city.name);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-[#0B0F19] hover:bg-orange-500/20 text-slate-300 hover:text-orange-400 border border-[#23304A] hover:border-orange-500/40 text-[10px] font-bold whitespace-nowrap transition cursor-pointer shrink-0"
+            >
+              {city.name}
+            </button>
+          ))}
+        </div>
 
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <div className="flex items-center gap-1.5">
@@ -433,6 +534,33 @@ export const GoogleMapsLocationPicker: React.FC<GoogleMapsLocationPickerProps> =
             <span>GPS Auto</span>
           </button>
         </div>
+
+        {/* Extracted Address Components Tags */}
+        {(detectedArea || detectedCity || detectedState || detectedPincode) && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <span className="text-[10px] text-slate-400 font-bold">Detected:</span>
+            {detectedArea && (
+              <span className="text-[10px] font-semibold bg-slate-900 border border-slate-700 text-slate-300 px-2 py-0.5 rounded-md">
+                Area: <strong className="text-white">{detectedArea}</strong>
+              </span>
+            )}
+            {detectedCity && (
+              <span className="text-[10px] font-semibold bg-orange-500/10 border border-orange-500/30 text-orange-300 px-2 py-0.5 rounded-md">
+                City: <strong className="text-white">{detectedCity}</strong>
+              </span>
+            )}
+            {detectedState && (
+              <span className="text-[10px] font-semibold bg-slate-900 border border-slate-700 text-slate-300 px-2 py-0.5 rounded-md">
+                State: <strong className="text-white">{detectedState}</strong>
+              </span>
+            )}
+            {detectedPincode && (
+              <span className="text-[10px] font-semibold bg-slate-900 border border-slate-700 text-slate-300 px-2 py-0.5 rounded-md font-mono">
+                PIN: <strong className="text-white">{detectedPincode}</strong>
+              </span>
+            )}
+          </div>
+        )}
 
         {showSaveButton && (
           <button

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
 import { ShopLocationPickerModal } from '../components/ShopLocationPickerModal';
 import { 
@@ -12,34 +12,94 @@ import {
   Truck, 
   CheckCircle2,
   SlidersHorizontal,
-  Compass
+  Compass,
+  Camera,
+  Upload,
+  Trash2
 } from 'lucide-react';
 
 export const ShopSetupScreen: React.FC = () => {
-  const { ownerProfile, saveShop, isLoading, setActiveScreen } = useOwnerApp();
+  const { ownerProfile, saveShop, isLoading, setActiveScreen, shop } = useOwnerApp();
 
   // Business Type Selection (Permanent Restaurant vs Mobile Food Stall)
-  const [isMobileStall, setIsMobileStall] = useState<boolean>(false);
-  const [shopType, setShopType] = useState('Restaurant / Cafe');
+  const [isMobileStall, setIsMobileStall] = useState<boolean>(shop?.isMobileStall ?? false);
+  const [shopType, setShopType] = useState(shop?.shopType || 'Restaurant / Cafe');
 
-  // Form Fields
-  const [shopName, setShopName] = useState('');
-  const [description, setDescription] = useState('');
-  const [phone, setPhone] = useState(ownerProfile?.phone || '');
-  const [address, setAddress] = useState('');
-  const [area, setArea] = useState('');
-  const [city, setCity] = useState('Bengaluru');
-  const [state, setState] = useState('Karnataka');
-  const [pincode, setPincode] = useState('');
-  const [openingTime, setOpeningTime] = useState('10:00 AM');
-  const [closingTime, setClosingTime] = useState('11:00 PM');
-  const [upiId, setUpiId] = useState('');
+  // Form Fields - initialized from existing shop (for edit/resubmission) or blank for new partner
+  const [shopName, setShopName] = useState(shop?.name || '');
+  const [photoUrl, setPhotoUrl] = useState(shop?.logoUrl || shop?.bannerUrl || '');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [description, setDescription] = useState(shop?.description || '');
+  const [phone, setPhone] = useState(shop?.phone || ownerProfile?.phone || '');
+  const [address, setAddress] = useState(shop?.address || '');
+  const [area, setArea] = useState(shop?.area || '');
+  const [city, setCity] = useState(shop?.city && shop.city !== 'Bengaluru' ? shop.city : '');
+  const [state, setState] = useState(shop?.state && shop.state !== 'Karnataka' ? shop.state : '');
+  const [pincode, setPincode] = useState(shop?.pincode || '');
+  const [openingTime, setOpeningTime] = useState(shop?.openingTime || '10:00 AM');
+  const [closingTime, setClosingTime] = useState(shop?.closingTime || '11:00 PM');
+  const [upiId, setUpiId] = useState(shop?.upiId || '');
+
+  const photoFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Client-side photo compression and upload
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setFormError('Please select an image file (JPG, PNG, WebP).');
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 1200;
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          setPhotoUrl(canvas.toDataURL('image/jpeg', 0.85));
+        } else {
+          setPhotoUrl(event.target?.result as string);
+        }
+        setIsUploadingPhoto(false);
+      };
+      img.onerror = () => {
+        setIsUploadingPhoto(false);
+        setFormError('Failed to process image file.');
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = () => {
+      setIsUploadingPhoto(false);
+      setFormError('Failed to read image file.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Geospatial Fields
-  const [latitude, setLatitude] = useState<number | undefined>();
-  const [longitude, setLongitude] = useState<number | undefined>();
-  const [locationAccuracy, setLocationAccuracy] = useState<number | undefined>();
-  const [lastLocationUpdated, setLastLocationUpdated] = useState<string | undefined>();
+  const [latitude, setLatitude] = useState<number | undefined>(shop?.latitude);
+  const [longitude, setLongitude] = useState<number | undefined>(shop?.longitude);
+  const [locationAccuracy, setLocationAccuracy] = useState<number | undefined>(shop?.locationAccuracyMeters);
+  const [lastLocationUpdated, setLastLocationUpdated] = useState<string | undefined>(shop?.lastLocationUpdatedAt);
   
   // UI States
   const [locating, setLocating] = useState(false);
@@ -48,9 +108,9 @@ export const ShopSetupScreen: React.FC = () => {
 
   // Quick stall categories
   const stallCategories = [
-    'Food Stall / Thela / Food Cart',
+    'Food Stall & Food Cart',
     'Chaat & Street Food Cart',
-    'Chai & Snack Thela',
+    'Chai & Snack Cart',
     'Momo & Fast Food Stall',
     'Juice & Beverage Stall',
     'South Indian Tiffin Cart',
@@ -102,6 +162,9 @@ export const ShopSetupScreen: React.FC = () => {
     longitude: number;
     address?: string;
     area?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
     accuracy?: number;
   }) => {
     setLatitude(loc.latitude);
@@ -109,12 +172,11 @@ export const ShopSetupScreen: React.FC = () => {
     if (loc.accuracy) setLocationAccuracy(loc.accuracy);
     setLastLocationUpdated(new Date().toISOString());
 
-    if (loc.address && !address) {
-      setAddress(loc.address);
-    }
-    if (loc.area && !area) {
-      setArea(loc.area);
-    }
+    if (loc.address) setAddress(loc.address);
+    if (loc.area) setArea(loc.area);
+    if (loc.city) setCity(loc.city);
+    if (loc.state) setState(loc.state);
+    if (loc.pincode) setPincode(loc.pincode);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -151,10 +213,12 @@ export const ShopSetupScreen: React.FC = () => {
       acceptsTakeaway: true,
       acceptsDelivery: false,
       deliveryRadiusKm: 3,
+      logoUrl: photoUrl || undefined,
+      bannerUrl: photoUrl || undefined,
     });
 
     if (success) {
-      setActiveScreen('dashboard');
+      setActiveScreen('kyc_status');
     }
   };
 
@@ -214,12 +278,12 @@ export const ShopSetupScreen: React.FC = () => {
               </div>
             </button>
 
-            {/* Option B: Mobile Food Stall / Thela / Food Cart */}
+            {/* Option B: Mobile Food Cart & Food Stall */}
             <button
               type="button"
               onClick={() => {
                 setIsMobileStall(true);
-                setShopType('Food Stall / Thela / Food Cart');
+                setShopType('Food Stall & Food Cart');
               }}
               className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
                 isMobileStall
@@ -236,9 +300,9 @@ export const ShopSetupScreen: React.FC = () => {
                 {isMobileStall && <CheckCircle2 className="w-4 h-4 text-orange-400" />}
               </div>
               <div>
-                <p className="text-xs font-black text-white">Mobile Food Stall / Thela</p>
+                <p className="text-xs font-black text-white">Mobile Food Cart / Stall</p>
                 <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">
-                  Street cart/thela that updates spot on-demand
+                  Street food cart that updates spot on-demand
                 </p>
               </div>
             </button>
@@ -284,6 +348,73 @@ export const ShopSetupScreen: React.FC = () => {
                 className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
               />
             </div>
+
+            {/* Shop Storefront Photo Upload */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                <span>Shop Storefront Photo</span>
+                <span className="text-[10px] text-slate-500">Optional • Recommended</span>
+              </label>
+
+              <input
+                ref={photoFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoUpload}
+              />
+
+              {photoUrl ? (
+                <div className="relative w-full h-36 rounded-xl overflow-hidden border border-slate-800 bg-slate-950 group">
+                  <img
+                    src={photoUrl}
+                    alt="Shop preview"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isUploadingPhoto}
+                      onClick={() => photoFileInputRef.current?.click()}
+                      className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Change</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isUploadingPhoto}
+                      onClick={() => setPhotoUrl('')}
+                      className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remove</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onClick={() => !isUploadingPhoto && photoFileInputRef.current?.click()}
+                  className="w-full p-4 rounded-xl border border-dashed border-slate-800 hover:border-orange-500/60 bg-slate-900/40 hover:bg-orange-500/5 flex items-center gap-3.5 cursor-pointer transition"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-orange-500/15 flex items-center justify-center text-orange-400 shrink-0">
+                    {isUploadingPhoto ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Camera className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-white">
+                      {isUploadingPhoto ? 'Uploading photo...' : 'Upload Storefront Photo'}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Take a photo of your shop or food cart to show customers
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -323,7 +454,7 @@ export const ShopSetupScreen: React.FC = () => {
                     type="text"
                     value={area}
                     onChange={(e) => setArea(e.target.value)}
-                    placeholder="e.g. Koramangala 5th Block"
+                    placeholder="e.g. Bandra West or Connaught Place"
                     className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
                   />
                 </div>
@@ -333,7 +464,7 @@ export const ShopSetupScreen: React.FC = () => {
                     type="text"
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
-                    placeholder="e.g. Bengaluru"
+                    placeholder="e.g. Mumbai"
                     className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
                   />
                 </div>
@@ -346,7 +477,7 @@ export const ShopSetupScreen: React.FC = () => {
                     type="text"
                     value={state}
                     onChange={(e) => setState(e.target.value)}
-                    placeholder="Karnataka"
+                    placeholder="e.g. Maharashtra"
                     className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
                   />
                 </div>
@@ -356,7 +487,7 @@ export const ShopSetupScreen: React.FC = () => {
                     type="text"
                     value={pincode}
                     onChange={(e) => setPincode(e.target.value)}
-                    placeholder="560034"
+                    placeholder="e.g. 400050"
                     className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
                   />
                 </div>
@@ -413,7 +544,7 @@ export const ShopSetupScreen: React.FC = () => {
                   type="text"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="e.g. Near Metro Pillar 104, 100ft Road"
+                  placeholder="e.g. Near Station Exit / Chowpatty"
                   className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
                 />
               </div>
@@ -425,7 +556,7 @@ export const ShopSetupScreen: React.FC = () => {
                     type="text"
                     value={area}
                     onChange={(e) => setArea(e.target.value)}
-                    placeholder="e.g. Indiranagar Market"
+                    placeholder="e.g. Bandra Linking Road"
                     className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
                   />
                 </div>
@@ -435,7 +566,30 @@ export const ShopSetupScreen: React.FC = () => {
                     type="text"
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
-                    placeholder="Bengaluru"
+                    placeholder="e.g. Mumbai"
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">State</label>
+                  <input
+                    type="text"
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
+                    placeholder="e.g. Maharashtra"
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Pincode</label>
+                  <input
+                    type="text"
+                    value={pincode}
+                    onChange={(e) => setPincode(e.target.value)}
+                    placeholder="e.g. 400050"
                     className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none"
                   />
                 </div>
@@ -449,7 +603,7 @@ export const ShopSetupScreen: React.FC = () => {
                     <p className="text-[11px] text-slate-400">
                       {latitude && longitude
                         ? `Lat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)}`
-                        : 'Tap button to acquire current street spot coordinates'}
+                        : 'Tap button to acquire current street spot coordinates or select on map'}
                     </p>
                   </div>
                   {locationAccuracy && (
@@ -482,8 +636,8 @@ export const ShopSetupScreen: React.FC = () => {
                     className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-1.5 transition border border-slate-700 cursor-pointer"
                     title="Fine-tune on map"
                   >
-                    <MapPin className="w-4 h-4 text-orange-400" />
-                    <span>Map</span>
+                    <Compass className="w-4 h-4 text-orange-400" />
+                    <span>Map Picker</span>
                   </button>
                 </div>
 
@@ -562,7 +716,7 @@ export const ShopSetupScreen: React.FC = () => {
               <span>Saving store settings...</span>
             </>
           ) : (
-            <span>Launch FoodFax Owner Dashboard</span>
+            <span>Submit Details for KYC Verification</span>
           )}
         </button>
       </form>

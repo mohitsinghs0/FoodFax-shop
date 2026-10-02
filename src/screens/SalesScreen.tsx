@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
 import { generateSalesSummaryPdf } from '../services/pdfReportService';
+import { SalesHistoryComponent } from '../components/SalesHistoryComponent';
 import { 
   TrendingUp, 
   CreditCard, 
@@ -171,19 +172,19 @@ export const SalesScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4 pb-24 p-3.5 max-w-[440px] mx-auto select-none">
+    <div className="space-y-4 lg:space-y-6 pb-24 lg:pb-12 p-3.5 lg:p-8 max-w-[440px] lg:max-w-7xl mx-auto select-none">
       {/* Page Header with Direct PDF Download Action */}
-      <div className="flex flex-col gap-3 border-b border-[#1E293B] pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1E293B] pb-3">
         <div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveScreen('dashboard')}
-              className="p-1 -ml-1 text-white hover:text-[#F97316] transition cursor-pointer"
+              className="p-1 -ml-1 text-white hover:text-[#F97316] transition cursor-pointer lg:hidden"
               title="Back to Dashboard"
             >
               <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
             </button>
-            <h2 className="text-lg font-black text-white tracking-tight truncate">Sales &amp; Analytics</h2>
+            <h2 className="text-lg lg:text-xl font-black text-white tracking-tight truncate">Sales &amp; Analytics</h2>
             <span className="px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 text-[10px] font-black uppercase tracking-wider border border-orange-500/30 shrink-0">
               Live POS
             </span>
@@ -197,7 +198,7 @@ export const SalesScreen: React.FC = () => {
         <button
           onClick={handleDownloadPdf}
           disabled={isExportingPdf}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold text-xs shadow-md shadow-orange-950/40 transition active:scale-95 cursor-pointer disabled:opacity-50"
+          className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold text-xs shadow-md shadow-orange-950/40 transition active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
           title="Download sales summary in PDF format"
         >
           <FileDown className="w-4 h-4 stroke-[2.2]" />
@@ -286,80 +287,89 @@ export const SalesScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Main KPI Revenue Card */}
-      <div className="p-5 sm:p-6 rounded-[24px] bg-gradient-to-tr from-[#EA580C] via-[#F97316] to-[#D97706] text-white shadow-xl shadow-orange-950/20">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-extrabold uppercase tracking-wider text-orange-100 flex items-center gap-1.5">
-            <TrendingUp className="w-4 h-4" />
-            Settled Net Revenue ({dateRangeLabel})
-          </span>
-          <span className="text-[11px] font-bold px-2 py-0.5 bg-black/20 rounded-full text-white">
-            {completedOrders.length} Paid Orders
-          </span>
-        </div>
+      {/* KPI & Payment Split Grid on Desktop */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-stretch">
+        {/* Main KPI Revenue Card */}
+        <div className="p-5 sm:p-6 rounded-[24px] bg-gradient-to-tr from-[#EA580C] via-[#F97316] to-[#D97706] text-white shadow-xl shadow-orange-950/20 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-orange-100 flex items-center gap-1.5">
+                <TrendingUp className="w-4 h-4" />
+                Settled Net Revenue ({dateRangeLabel})
+              </span>
+              <span className="text-[11px] font-bold px-2 py-0.5 bg-black/20 rounded-full text-white">
+                {completedOrders.length} Paid Orders
+              </span>
+            </div>
 
-        <h3 className="text-3xl sm:text-4xl font-black tracking-tight">₹{totalRevenue.toLocaleString()}</h3>
+            <h3 className="text-3xl sm:text-4xl font-black tracking-tight">₹{totalRevenue.toLocaleString()}</h3>
+          </div>
 
-        {/* 3 Metric Sub-pills */}
-        <div className="mt-4 pt-4 border-t border-white/20 grid grid-cols-3 gap-2 text-center text-xs">
-          <div className="bg-white/10 rounded-xl p-2 backdrop-blur-sm">
-            <p className="text-[10px] text-orange-200 uppercase font-bold">Total Orders</p>
-            <p className="text-base font-black text-white mt-0.5">{filteredOrders.length}</p>
-          </div>
-          <div className="bg-white/10 rounded-xl p-2 backdrop-blur-sm">
-            <p className="text-[10px] text-orange-200 uppercase font-bold">Avg Order Value</p>
-            <p className="text-base font-black text-white mt-0.5">₹{aov}</p>
-          </div>
-          <div className="bg-white/10 rounded-xl p-2 backdrop-blur-sm">
-            <p className="text-[10px] text-orange-200 uppercase font-bold">Cancelled / Void</p>
-            <p className="text-base font-black text-white mt-0.5">{cancelledOrders.length}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Payment Splits: UPI vs Counter Cash */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* UPI Direct Settlement */}
-        <div className="p-4 rounded-2xl bg-[#131B2E] border border-[#23304A]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center">
-                <CreditCard className="w-4 h-4 stroke-[2.2]" />
-              </div>
-              <div>
-                <span className="text-xs text-white font-bold block leading-tight">UPI QR Payouts</span>
-                <span className="text-[10px] text-slate-400">Direct to Owner Bank</span>
-              </div>
+          {/* 3 Metric Sub-pills */}
+          <div className="mt-4 pt-4 border-t border-white/20 grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="bg-white/10 rounded-xl p-2 backdrop-blur-sm">
+              <p className="text-[10px] text-orange-200 uppercase font-bold">Total Orders</p>
+              <p className="text-base font-black text-white mt-0.5">{filteredOrders.length}</p>
+            </div>
+            <div className="bg-white/10 rounded-xl p-2 backdrop-blur-sm">
+              <p className="text-[10px] text-orange-200 uppercase font-bold">Avg Order Value</p>
+              <p className="text-base font-black text-white mt-0.5">₹{aov}</p>
+            </div>
+            <div className="bg-white/10 rounded-xl p-2 backdrop-blur-sm">
+              <p className="text-[10px] text-orange-200 uppercase font-bold">Cancelled / Void</p>
+              <p className="text-base font-black text-white mt-0.5">{cancelledOrders.length}</p>
             </div>
           </div>
-          <p className="text-2xl font-black text-white">₹{upiRevenue.toLocaleString()}</p>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-            <span>{upiOrders.length} orders</span>
-            <span className="text-blue-400 font-bold">
-              {totalRevenue > 0 ? Math.round((upiRevenue / totalRevenue) * 100) : 0}% of sales
-            </span>
-          </div>
         </div>
 
-        {/* Counter Cash */}
-        <div className="p-4 rounded-2xl bg-[#131B2E] border border-[#23304A]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
-                <Banknote className="w-4 h-4 stroke-[2.2]" />
+        {/* Payment Splits: UPI vs Counter Cash */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 h-full">
+          {/* UPI Direct Settlement */}
+          <div className="p-4 rounded-2xl bg-[#131B2E] border border-[#23304A] flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center">
+                    <CreditCard className="w-4 h-4 stroke-[2.2]" />
+                  </div>
+                  <div>
+                    <span className="text-xs text-white font-bold block leading-tight">UPI QR Payouts</span>
+                    <span className="text-[10px] text-slate-400">Direct to Owner Bank</span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <span className="text-xs text-white font-bold block leading-tight">Cash on Delivery</span>
-                <span className="text-[10px] text-slate-400">Direct Register Cash</span>
-              </div>
+              <p className="text-2xl font-black text-white">₹{upiRevenue.toLocaleString()}</p>
+            </div>
+            <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+              <span>{upiOrders.length} orders</span>
+              <span className="text-blue-400 font-bold">
+                {totalRevenue > 0 ? Math.round((upiRevenue / totalRevenue) * 100) : 0}% of sales
+              </span>
             </div>
           </div>
-          <p className="text-2xl font-black text-white">₹{cashRevenue.toLocaleString()}</p>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-            <span>{cashOrders.length} orders</span>
-            <span className="text-emerald-400 font-bold">
-              {totalRevenue > 0 ? Math.round((cashRevenue / totalRevenue) * 100) : 0}% of sales
-            </span>
+
+          {/* Counter Cash */}
+          <div className="p-4 rounded-2xl bg-[#131B2E] border border-[#23304A] flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                    <Banknote className="w-4 h-4 stroke-[2.2]" />
+                  </div>
+                  <div>
+                    <span className="text-xs text-white font-bold block leading-tight">Cash on Delivery</span>
+                    <span className="text-[10px] text-slate-400">Direct Register Cash</span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-2xl font-black text-white">₹{cashRevenue.toLocaleString()}</p>
+            </div>
+            <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+              <span>{cashOrders.length} orders</span>
+              <span className="text-emerald-400 font-bold">
+                {totalRevenue > 0 ? Math.round((cashRevenue / totalRevenue) * 100) : 0}% of sales
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -399,71 +409,13 @@ export const SalesScreen: React.FC = () => {
         </div>
       )}
 
-      {/* Settled Orders Receipts Log */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Settled Order Receipts ({completedOrders.length})
-          </h4>
-          <button
-            onClick={handleDownloadPdf}
-            className="text-[11px] font-bold text-orange-400 hover:text-orange-300 flex items-center gap-1 cursor-pointer"
-          >
-            <FileDown className="w-3.5 h-3.5" />
-            <span>Export Receipts PDF</span>
-          </button>
-        </div>
-
-        {completedOrders.length === 0 ? (
-          <div className="p-8 text-center bg-[#131B2E] border border-[#23304A] rounded-2xl text-xs text-slate-400 space-y-1">
-            <ShoppingBag className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-            <p className="font-bold text-white">No completed orders found</p>
-            <p className="text-[11px] text-slate-500">
-              There were no settled orders recorded between {startDateStr} and {endDateStr}.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-            {completedOrders.map((ord) => {
-              const orderTimeStr = new Date(ord.createdAt).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              });
-              const orderDateStr = new Date(ord.createdAt).toLocaleDateString([], {
-                day: '2-digit',
-                month: 'short',
-              });
-
-              return (
-                <div
-                  key={ord.id}
-                  className="p-3 rounded-xl bg-[#131B2E] border border-[#23304A] hover:border-slate-700 flex items-center justify-between text-xs transition"
-                >
-                  <div className="min-w-0 pr-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-black text-white">{ord.orderNumber}</span>
-                      <span className="text-[9px] uppercase font-black text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                        {ord.paymentMethod.toUpperCase()} PAID
-                      </span>
-                      <span className="text-[10px] text-slate-400 uppercase font-semibold">
-                        {ord.orderType}
-                      </span>
-                    </div>
-                    <p className="text-slate-400 text-[11px] mt-0.5 truncate">
-                      {ord.customerName} • {orderDateStr}, {orderTimeStr} • {ord.items.map((i) => `${i.quantity}x ${i.name}`).join(', ')}
-                    </p>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <span className="text-sm font-black text-white">₹{ord.totalAmount}</span>
-                    <p className="text-[10px] text-slate-500">{ord.items.length} item{ord.items.length > 1 ? 's' : ''}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* Order Sales History & Completion Logs Component */}
+      <SalesHistoryComponent
+        orders={filteredOrders}
+        totalRevenue={totalRevenue}
+        dateRangeLabel={dateRangeLabel}
+        onExportPdf={handleDownloadPdf}
+      />
 
       {/* Date Picker Range Modal */}
       {showDatePickerModal && (

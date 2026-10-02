@@ -79,11 +79,11 @@ export function generateSalesSummaryPdf(params: SalesReportParams): void {
   doc.setTextColor(100, 116, 139);
   doc.text(`Date Scope: ${params.startDate} to ${params.endDate}`, 14, 56);
 
-  // Key KPI Cards (4 grid boxes)
+  // Key KPI Cards (4 grid boxes fitting within 14mm to 196mm = 182mm printable width)
   const boxY = 62;
-  const boxWidth = 43;
+  const boxWidth = 41.5;
   const boxHeight = 22;
-  const gap = 6;
+  const gap = 5.3;
 
   // Box 1: Total Revenue
   doc.setFillColor(254, 242, 232); // Orange 50
@@ -93,7 +93,7 @@ export function generateSalesSummaryPdf(params: SalesReportParams): void {
   doc.setFontSize(8);
   doc.setTextColor(194, 65, 12);
   doc.text('TOTAL REVENUE', 18, boxY + 6);
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(15, 23, 42);
   doc.text(`INR ${params.totalRevenue.toLocaleString()}`, 18, boxY + 16);
 
@@ -106,7 +106,7 @@ export function generateSalesSummaryPdf(params: SalesReportParams): void {
   doc.setFontSize(8);
   doc.setTextColor(21, 128, 61);
   doc.text('SETTLED ORDERS', b2X + 4, boxY + 6);
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(15, 23, 42);
   doc.text(`${params.completedOrdersCount} orders`, b2X + 4, boxY + 16);
 
@@ -119,7 +119,7 @@ export function generateSalesSummaryPdf(params: SalesReportParams): void {
   doc.setFontSize(8);
   doc.setTextColor(29, 78, 216);
   doc.text('AVG ORDER VALUE', b3X + 4, boxY + 6);
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(15, 23, 42);
   doc.text(`INR ${params.averageOrderValue}`, b3X + 4, boxY + 16);
 
@@ -132,10 +132,10 @@ export function generateSalesSummaryPdf(params: SalesReportParams): void {
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
   doc.text('PAYMENT SPLIT', b4X + 4, boxY + 6);
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setTextColor(15, 23, 42);
   doc.text(`UPI: INR ${params.upiAmount.toLocaleString()}`, b4X + 4, boxY + 13);
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(100, 116, 139);
   doc.text(`Cash: INR ${params.cashAmount.toLocaleString()}`, b4X + 4, boxY + 18);
 
@@ -148,12 +148,13 @@ export function generateSalesSummaryPdf(params: SalesReportParams): void {
       minute: '2-digit',
     });
     const itemsSummary = ord.items.map((i) => `${i.quantity}x ${i.name}`).join(', ');
+    const displayType = ord.orderType === 'dine_in' ? 'DINE-IN' : 'TAKEAWAY';
     return [
       idx + 1,
       ord.orderNumber,
       timeFormatted,
       ord.customerName || 'Walk-in Guest',
-      ord.orderType.toUpperCase(),
+      displayType,
       itemsSummary,
       ord.paymentMethod.toUpperCase(),
       `INR ${ord.totalAmount}`,
@@ -162,30 +163,62 @@ export function generateSalesSummaryPdf(params: SalesReportParams): void {
 
   autoTable(doc, {
     startY: 92,
+    margin: { left: 14, right: 14 },
+    tableWidth: 182,
     head: [['#', 'Order No', 'Date & Time', 'Customer', 'Type', 'Ordered Items', 'Payment', 'Amount']],
     body: tableData.length > 0 ? tableData : [['-', 'No settled orders recorded for the selected date range.', '', '', '', '', '', 'INR 0']],
+    foot: [
+      [
+        '',
+        '',
+        '',
+        '',
+        '',
+        'TOTAL SETTLEMENT REVENUE',
+        `${params.completedOrdersCount} settled`,
+        `INR ${params.totalRevenue.toLocaleString('en-IN')}`,
+      ],
+    ],
     theme: 'striped',
     headStyles: {
       fillColor: [15, 23, 42],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 8.5,
-      halign: 'left',
+      fontSize: 8,
+      cellPadding: { top: 3.5, right: 3, bottom: 3.5, left: 3 },
     },
     bodyStyles: {
-      fontSize: 8,
+      fontSize: 7.5,
       textColor: [30, 41, 59],
-      cellPadding: 2.5,
+      cellPadding: { top: 2.5, right: 3, bottom: 2.5, left: 3 },
+      overflow: 'linebreak',
+    },
+    footStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [249, 115, 22],
+      fontStyle: 'bold',
+      fontSize: 8,
+      cellPadding: { top: 3.5, right: 3, bottom: 3.5, left: 3 },
     },
     columnStyles: {
       0: { cellWidth: 8, halign: 'center' },
-      1: { cellWidth: 20, fontStyle: 'bold' },
-      2: { cellWidth: 28 },
-      3: { cellWidth: 24 },
-      4: { cellWidth: 18 },
-      5: { cellWidth: 62 },
+      1: { cellWidth: 18, fontStyle: 'bold', halign: 'center' },
+      2: { cellWidth: 26, halign: 'left' },
+      3: { cellWidth: 25, halign: 'left' },
+      4: { cellWidth: 19, halign: 'center', fontSize: 7 },
+      5: { cellWidth: 47, halign: 'left' },
       6: { cellWidth: 18, halign: 'center' },
-      7: { cellWidth: 20, halign: 'right', fontStyle: 'bold' },
+      7: { cellWidth: 21, halign: 'right', fontStyle: 'bold' },
+    },
+    didParseCell: (data) => {
+      // Ensure header, body and footer for Amount column align cleanly to the right
+      if (data.column.index === 7) {
+        data.cell.styles.halign = 'right';
+      }
+      if (data.section === 'foot' && data.column.index === 5) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.textColor = [255, 255, 255];
+      }
     },
     didDrawPage: (data) => {
       // Footer page numbering

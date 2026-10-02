@@ -79,6 +79,7 @@ export interface Shop {
   id: string;
   ownerId: string;
   name: string;
+  slug?: string;
   shopType?: string;
   isMobileStall?: boolean;
   description?: string;
@@ -104,6 +105,8 @@ export interface Shop {
   acceptsTakeaway: boolean;
   acceptsDineIn: boolean;
   acceptsDelivery: boolean;
+  diningTables?: string[];
+  diningSections?: string[];
   isMapSpotActive?: boolean;
   deliveryRadiusKm?: number;
   deliveryFeeType?: 'free' | 'fixed';
@@ -113,6 +116,14 @@ export interface Shop {
   preparationTimeMinutes?: string;
   distanceMeters?: number;
   distanceKm?: number;
+  kycStatus?: 'pending' | 'in_progress' | 'approved' | 'rejected';
+  kycRejectionReason?: string;
+  isVerified?: boolean;
+  is_active?: boolean;
+  kyc_status?: string;
+  rejection_reason?: string;
+  tagline?: string;
+  featured_item?: string;
   createdAt?: string;
 }
 
@@ -153,6 +164,7 @@ export type ActiveScreen =
   | 'login'
   | 'register'
   | 'shop_setup'
+  | 'kyc_status'
   | 'dashboard'
   | 'orders'
   | 'menu'

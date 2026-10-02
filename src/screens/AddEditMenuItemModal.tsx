@@ -1,7 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
 import { MenuItem, DEFAULT_MENU_CATEGORIES } from '../types';
-import { X, Check, Trash2, AlertTriangle, Plus } from 'lucide-react';
+import { 
+  X, 
+  Check, 
+  Trash2, 
+  AlertTriangle, 
+  Plus, 
+  Image as ImageIcon, 
+  Upload, 
+  Camera, 
+  Loader2 
+} from 'lucide-react';
 
 interface AddEditMenuItemModalProps {
   itemToEdit?: MenuItem | null;
@@ -18,6 +28,9 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
   const [categoryId, setCategoryId] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState<string>('');
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
+  const [imageInputMode, setImageInputMode] = useState<'upload' | 'url'>('upload');
   const [isVeg, setIsVeg] = useState(true);
   const [isAvailable, setIsAvailable] = useState(true);
   const [prepTime, setPrepTime] = useState('15');
@@ -29,6 +42,8 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
   const [isAddingCat, setIsAddingCat] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Predefined & standard tags requested: Starters, Main Course, Beverages, etc.
   const standardTags = [
@@ -59,6 +74,7 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
       setCategoryId(itemToEdit.categoryId || (availableCategories[0]?.id ?? ''));
       setPrice(String(itemToEdit.price));
       setDescription(itemToEdit.description || '');
+      setImageUrl(itemToEdit.imageUrl || '');
       setIsVeg(itemToEdit.isVeg);
       setIsAvailable(itemToEdit.isAvailable);
       setPrepTime(String(itemToEdit.preparationTimeMinutes));
@@ -69,6 +85,62 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
       }
     }
   }, [itemToEdit, availableCategories, categoryId]);
+
+  // Handle client-side image compression and upload via FileReader
+  const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file (JPG, PNG, WebP).');
+      return;
+    }
+
+    setIsUploadingImage(true);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Resize image to max 800x800 for optimal loading & storage performance
+        const canvas = document.createElement('canvas');
+        const maxDim = 800;
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setImageUrl(compressedDataUrl);
+        } else {
+          setImageUrl(event.target?.result as string);
+        }
+        setIsUploadingImage(false);
+      };
+      img.onerror = () => {
+        setImageUrl(event.target?.result as string);
+        setIsUploadingImage(false);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = () => {
+      setIsUploadingImage(false);
+      alert('Failed to read the selected image file.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleQuickAddCategory = async () => {
     const trimmed = quickCatName.trim();
@@ -104,6 +176,7 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
       categoryId: categoryId || undefined,
       price: parseFloat(price) || 0,
       description: description.trim(),
+      imageUrl: imageUrl.trim() || undefined,
       isVeg,
       isAvailable,
       preparationTimeMinutes: parseInt(prepTime, 10) || 15,
@@ -120,12 +193,118 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
           <h3 className="text-base font-black text-white">
             {itemToEdit ? 'Edit Dish Details' : 'Add New Dish to Menu'}
           </h3>
-          <button onClick={onClose} className="text-[#94A3B8] hover:text-white">
+          <button onClick={onClose} className="text-[#94A3B8] hover:text-white cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Dish Image Upload Section */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-orange-400" />
+                <span>Dish Image / Menu Photo</span>
+                <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+              </label>
+              {imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageUrl('');
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                  className="text-[11px] font-bold text-rose-400 hover:text-rose-300 transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Remove Photo</span>
+                </button>
+              )}
+            </div>
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageFileUpload}
+            />
+
+            {/* Image Preview or Upload Dropzone */}
+            {imageUrl ? (
+              <div className="relative rounded-2xl overflow-hidden border border-[#23304A] bg-[#0B0F19] group">
+                <img
+                  src={imageUrl}
+                  alt={name || 'Dish preview'}
+                  className="w-full h-36 object-cover object-center"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80';
+                  }}
+                />
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition cursor-pointer"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Change Photo</span>
+                  </button>
+                </div>
+                <div className="absolute bottom-2 left-2 bg-black/75 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[10px] text-emerald-400 font-bold flex items-center gap-1.5 border border-emerald-500/30">
+                  <Check className="w-3 h-3" />
+                  <span>Image Uploaded</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-[#23304A] hover:border-orange-500/60 rounded-2xl p-4 bg-[#0B0F19]/60 hover:bg-[#0B0F19] transition cursor-pointer flex flex-col items-center justify-center text-center group"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-orange-500/10 text-orange-400 flex items-center justify-center mb-2 group-hover:scale-110 transition">
+                    {isUploadingImage ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Upload className="w-5 h-5" />
+                    )}
+                  </div>
+                  <p className="text-xs font-bold text-white">
+                    {isUploadingImage ? 'Processing Image...' : 'Click to Upload Menu / Dish Image'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Take photo from camera or upload from gallery
+                  </p>
+                </div>
+
+                {/* Alternative URL paste */}
+                <div className="flex items-center justify-between text-[11px] px-1">
+                  <span className="text-slate-500 font-semibold">Or use web image</span>
+                  <button
+                    type="button"
+                    onClick={() => setImageInputMode(imageInputMode === 'url' ? 'upload' : 'url')}
+                    className="font-bold text-orange-400 hover:text-orange-300 underline cursor-pointer"
+                  >
+                    {imageInputMode === 'url' ? 'Hide URL input' : 'Paste Image Link (URL)'}
+                  </button>
+                </div>
+
+                {imageInputMode === 'url' && (
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={imageUrl}
+                      onChange={(e) => setImageUrl(e.target.value)}
+                      placeholder="https://images.unsplash.com/photo-..."
+                      className="flex-1 bg-[#0B0F19] border border-[#23304A] focus:border-orange-500 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="block text-xs font-bold text-[#94A3B8] mb-1.5">Dish Name *</label>
             <input

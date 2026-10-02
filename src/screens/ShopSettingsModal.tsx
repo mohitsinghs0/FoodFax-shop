@@ -13,7 +13,12 @@ import {
   UtensilsCrossed, 
   ShoppingBag, 
   Info,
-  Check
+  Check,
+  Plus,
+  Trash2,
+  Grid,
+  Tag,
+  Layers
 } from 'lucide-react';
 
 interface ShopSettingsModalProps {
@@ -42,10 +47,88 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({ onClose })
     (shop?.deliveryFeeType as 'free' | 'fixed') || 'free'
   );
   const [deliveryFeeAmount, setDeliveryFeeAmount] = useState<number>(shop?.deliveryFeeAmount ?? 0);
+
+  // Table and Section Management State
+  const [diningTables, setDiningTables] = useState<string[]>(
+    shop?.diningTables && shop.diningTables.length > 0
+      ? shop.diningTables
+      : ['Table 1', 'Table 2', 'Table 3', 'Table 4']
+  );
+  const [diningSections, setDiningSections] = useState<string[]>(
+    shop?.diningSections && shop.diningSections.length > 0
+      ? shop.diningSections
+      : ['Main Dining', 'AC Hall', 'Outdoor Patio']
+  );
+  const [selectedSection, setSelectedSection] = useState<string>(
+    shop?.diningSections?.[0] || 'Main Dining'
+  );
+  const [newTableInput, setNewTableInput] = useState<string>('');
+  const [newSectionInput, setNewSectionInput] = useState<string>('');
+  const [showAddSection, setShowAddSection] = useState<boolean>(false);
+
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   if (!shop) return null;
+
+  // Batch table generation (e.g. +5 or +10 tables)
+  const handleAddBatchTables = (count: number) => {
+    setDiningTables((prev) => {
+      let maxNum = 0;
+      prev.forEach((t) => {
+        const match = t.match(/\d+/);
+        if (match) {
+          const n = parseInt(match[0], 10);
+          if (n > maxNum) maxNum = n;
+        }
+      });
+      const newItems: string[] = [];
+      for (let i = 1; i <= count; i++) {
+        const prefix = selectedSection !== 'Main Dining' ? `${selectedSection} - ` : '';
+        newItems.push(`${prefix}Table ${maxNum + i}`);
+      }
+      return [...prev, ...newItems];
+    });
+  };
+
+  // Add individual custom table
+  const handleAddCustomTable = () => {
+    const trimmed = newTableInput.trim();
+    if (!trimmed) return;
+    const finalLabel = selectedSection !== 'Main Dining' && !trimmed.toLowerCase().includes(selectedSection.toLowerCase())
+      ? `${selectedSection} - ${trimmed}`
+      : trimmed;
+    if (!diningTables.includes(finalLabel)) {
+      setDiningTables((prev) => [...prev, finalLabel]);
+    }
+    setNewTableInput('');
+  };
+
+  // Remove table
+  const handleRemoveTable = (tableToRemove: string) => {
+    setDiningTables((prev) => prev.filter((t) => t !== tableToRemove));
+  };
+
+  // Add new section
+  const handleAddSection = () => {
+    const trimmed = newSectionInput.trim();
+    if (!trimmed) return;
+    if (!diningSections.includes(trimmed)) {
+      setDiningSections((prev) => [...prev, trimmed]);
+      setSelectedSection(trimmed);
+    }
+    setNewSectionInput('');
+    setShowAddSection(false);
+  };
+
+  // Remove section
+  const handleRemoveSection = (sectionToRemove: string) => {
+    if (diningSections.length <= 1) return;
+    setDiningSections((prev) => prev.filter((s) => s !== sectionToRemove));
+    if (selectedSection === sectionToRemove) {
+      setSelectedSection(diningSections.find((s) => s !== sectionToRemove) || 'Main Dining');
+    }
+  };
 
   const handleSaveAll = async () => {
     setIsSaving(true);
@@ -53,6 +136,8 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({ onClose })
       acceptsDineIn,
       acceptsTakeaway,
       acceptsDelivery,
+      diningTables,
+      diningSections,
       deliveryRadiusKm,
       deliveryFeeType,
       deliveryFeeAmount: deliveryFeeType === 'free' ? 0 : Number(deliveryFeeAmount),
@@ -129,6 +214,172 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({ onClose })
                 className="accent-orange-500 w-4 h-4 rounded cursor-pointer"
               />
             </label>
+
+            {/* DINE-IN TABLE & SECTION MANAGEMENT (Interactive Config) */}
+            {acceptsDineIn && (
+              <div className="p-3.5 rounded-xl bg-[#070b14] border border-[#23304A] space-y-3.5 mt-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Grid className="w-4 h-4 text-sky-400" />
+                    <div>
+                      <h5 className="text-xs font-black uppercase tracking-wider text-white">
+                        Dining Tables &amp; Sections
+                      </h5>
+                      <p className="text-[10px] text-slate-400">
+                        Define table labels and dining areas for customer orders
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/30">
+                    {diningTables.length} Tables Active
+                  </span>
+                </div>
+
+                {/* 1. Dining Sections Tabs */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Dining Sections / Areas</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddSection(!showAddSection)}
+                      className="text-[10px] font-bold text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>{showAddSection ? 'Cancel' : 'Add Section'}</span>
+                    </button>
+                  </div>
+
+                  {showAddSection && (
+                    <div className="p-2 rounded-lg bg-slate-900 border border-sky-500/30 flex gap-2">
+                      <input
+                        type="text"
+                        value={newSectionInput}
+                        onChange={(e) => setNewSectionInput(e.target.value)}
+                        placeholder="e.g. AC Dining, Rooftop, Garden..."
+                        className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white outline-none focus:border-sky-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddSection}
+                        disabled={!newSectionInput.trim()}
+                        className="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {diningSections.map((sec) => (
+                      <div
+                        key={sec}
+                        onClick={() => setSelectedSection(sec)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1.5 ${
+                          selectedSection === sec
+                            ? 'bg-sky-500/20 text-sky-300 border-sky-500/60 shadow-sm'
+                            : 'bg-[#0B0F19] text-slate-400 border-[#23304A] hover:text-white'
+                        }`}
+                      >
+                        <span>{sec}</span>
+                        {diningSections.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveSection(sec);
+                            }}
+                            className="text-slate-500 hover:text-rose-400 text-xs leading-none p-0.5"
+                            title="Remove section"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Tables Management in Current Section */}
+                <div className="space-y-2 pt-1 border-t border-slate-800/80">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                      <Tag className="w-3.5 h-3.5 text-orange-400" />
+                      <span>Table Labels ({diningTables.length})</span>
+                    </label>
+
+                    {/* Quick batch generator buttons */}
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-slate-500">Quick add:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleAddBatchTables(5)}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold border border-slate-700 transition cursor-pointer"
+                      >
+                        +5 Tables
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAddBatchTables(10)}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold border border-slate-700 transition cursor-pointer"
+                      >
+                        +10
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Add Custom Table Input */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newTableInput}
+                      onChange={(e) => setNewTableInput(e.target.value)}
+                      placeholder={`Custom label for ${selectedSection} (e.g. T-5, VIP-1)...`}
+                      className="flex-1 bg-[#0B0F19] border border-[#23304A] focus:border-sky-500 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomTable}
+                      disabled={!newTableInput.trim()}
+                      className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add</span>
+                    </button>
+                  </div>
+
+                  {/* Active Table Badges Container */}
+                  <div className="p-2.5 rounded-xl bg-[#0B0F19] border border-[#23304A] max-h-36 overflow-y-auto">
+                    {diningTables.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 text-center py-2">
+                        No tables defined yet. Click '+5 Tables' above or type a custom table name.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {diningTables.map((tbl) => (
+                          <div
+                            key={tbl}
+                            className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700/80 text-white text-xs font-bold flex items-center gap-1.5 group hover:border-slate-500 transition"
+                          >
+                            <span>{tbl}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTable(tbl)}
+                              className="text-slate-400 hover:text-rose-400 text-xs leading-none p-0.5 cursor-pointer"
+                              title="Delete table"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 2. Takeaway available */}
             <label className="flex items-center justify-between p-2.5 rounded-xl bg-[#0B0F19] border border-[#23304A] cursor-pointer hover:border-slate-700 transition">

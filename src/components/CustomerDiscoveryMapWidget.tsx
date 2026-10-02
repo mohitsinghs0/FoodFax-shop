@@ -294,7 +294,7 @@ export const CustomerDiscoveryMapWidget: React.FC<CustomerDiscoveryMapWidgetProp
                 )}
               </div>
               <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                {activeSelected.isMobileStall ? '📍 Mobile Food Stall / Thela' : '🏢 Restaurant & Cafe'} &bull; {activeSelected.address || activeSelected.area || 'Street Spot'}
+                {activeSelected.isMobileStall ? '📍 Mobile Food Cart / Stall' : '🏢 Restaurant & Cafe'} &bull; {activeSelected.address || activeSelected.area || 'Street Spot'}
               </p>
             </div>
 
@@ -391,7 +391,7 @@ export const CustomerDiscoveryMapWidget: React.FC<CustomerDiscoveryMapWidgetProp
 
             <div className="text-xs text-slate-300 space-y-1.5">
               <p>
-                <span className="text-slate-400">Type:</span> {viewShopModalShop.isMobileStall ? 'Mobile Food Stall / Thela' : 'Restaurant & Cafe'}
+                <span className="text-slate-400">Type:</span> {viewShopModalShop.isMobileStall ? 'Mobile Food Cart / Stall' : 'Restaurant & Cafe'}
               </p>
               <p>
                 <span className="text-slate-400">Spot / Address:</span> {viewShopModalShop.address || viewShopModalShop.area || 'Local Street Market'}

@@ -46,7 +46,7 @@ export const LoginScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [authMode, setAuthMode] = useState<'password' | 'otp'>('otp');
+  const [authMode, setAuthMode] = useState<'password' | 'otp'>('password');
   const [otpSent, setOtpSent] = useState(false);
   const [isPhoneFocused, setIsPhoneFocused] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -132,14 +132,17 @@ export const LoginScreen: React.FC = () => {
       return;
     }
 
-    const success = await loginWithPhone(fullPhone, password);
-    if (!success) {
+    const result = await loginWithPhone(fullPhone, password);
+    const isSuccess = typeof result === 'boolean' ? result : (result as any)?.success;
+    const errorDetail = (typeof result === 'object' && (result as any)?.error) || errorMessage;
+
+    if (!isSuccess) {
       // Re-check lockout status
       const updatedLock = authSecurityService.checkLockout(fullPhone);
       if (updatedLock.isLocked) {
         setLockoutSeconds(updatedLock.remainingSeconds);
       }
-      setFormError(errorMessage || 'Invalid mobile number or security password');
+      setFormError(errorDetail || 'Mobile number is not registered. Please click Register Restaurant below.');
     }
   };
 
@@ -172,7 +175,7 @@ export const LoginScreen: React.FC = () => {
       setDeliveredSmsCode(code);
       setInfoMessage(`Verification code sent to ${fullPhone}. Valid for 5 minutes.`);
     } else {
-      setFormError(errorMessage || 'Failed to send OTP. Please check your number.');
+      setFormError(errorMessage || `Mobile number ${fullPhone} is not registered yet. Please click Register Restaurant below.`);
     }
   };
 

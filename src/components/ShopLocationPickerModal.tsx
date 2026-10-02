@@ -13,6 +13,9 @@ interface ShopLocationPickerModalProps {
     longitude: number;
     address?: string;
     area?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
     accuracy?: number;
   }) => void;
   onClose: () => void;
@@ -32,6 +35,9 @@ export const ShopLocationPickerModal: React.FC<ShopLocationPickerModalProps> = (
     longitude: number;
     address?: string;
     area?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
     accuracy?: number;
   }) => {
     onConfirm(loc);

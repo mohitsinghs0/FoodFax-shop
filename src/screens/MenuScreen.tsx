@@ -70,7 +70,7 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ onOpenAddItem }) => {
   return (
     <div className="flex-1 bg-[#0B0F19] text-[#F8FAFC] pb-24 relative select-none flex flex-col">
       {/* Top App Bar */}
-      <div className="px-4 py-3.5 border-b border-[#131B2E] flex items-center justify-between sticky top-0 bg-[#0B0F19] z-20">
+      <div className="px-4 py-3.5 border-b border-[#131B2E] flex items-center justify-between bg-[#0B0F19]">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setActiveScreen('dashboard')}
@@ -106,9 +106,9 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ onOpenAddItem }) => {
         </div>
       </div>
 
-      <div className="px-4 py-3 space-y-3.5 max-w-md mx-auto w-full">
+      <div className="px-4 lg:px-8 py-3 lg:py-6 space-y-3.5 lg:space-y-5 max-w-md lg:max-w-7xl mx-auto w-full">
         {/* Search Bar */}
-        <div className="relative">
+        <div className="relative max-w-md lg:max-w-xl">
           <Search className="w-4 h-4 text-[#64748B] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
@@ -178,7 +178,7 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ onOpenAddItem }) => {
             </button>
           </div>
         ) : (
-          <div className="space-y-3 pt-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3.5 lg:gap-4 pt-1">
             {filteredItems.map((item) => {
               const itemCat = menuCategories.find((c) => c.id === item.categoryId);
 
@@ -288,7 +288,7 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ onOpenAddItem }) => {
       </div>
 
       {/* Sticky Bottom Action Button "+ Add Dish / Item" */}
-      <div className="sticky bottom-4 left-0 right-0 max-w-md mx-auto px-4 z-20 pointer-events-none flex justify-center mt-6">
+      <div className="sticky bottom-4 lg:bottom-6 left-0 right-0 max-w-md lg:max-w-lg mx-auto px-4 z-20 pointer-events-none flex justify-center mt-6">
         <button
           onClick={() => onOpenAddItem()}
           className="pointer-events-auto bg-[#F97316] hover:bg-[#EA580C] text-white font-bold text-sm px-6 py-3.5 rounded-[18px] shadow-xl shadow-orange-950/60 flex items-center gap-2 transition active:scale-95 cursor-pointer border border-orange-400/20"
