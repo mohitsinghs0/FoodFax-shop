@@ -81,6 +81,11 @@ interface OwnerAppContextType {
   resetOtpCode: string | null;
   checkKycStatus: () => Promise<Shop | null>;
   getSupabaseClient: () => any;
+  sessionExpiresAt: number | null;
+  isSessionExpiring: boolean;
+  sessionRemainingSeconds: number;
+  extendSession: () => Promise<boolean>;
+  triggerTestSessionWarning: () => void;
 }
 
 // Maps raw database record from Supabase 'public.orders' table to UI OwnerOrder format
@@ -173,20 +178,72 @@ function saveLocalUser(phone: string, data: { password: string; fullName: string
 }
 
 export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [activeScreen, setActiveScreenState] = useState<ActiveScreen>('splash');
   const [ownerProfile, setOwnerProfile] = useState<OwnerProfile | null>(() => {
-    // If offline and valid cached profile exists
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    try {
       const saved = localStorage.getItem('foodfax_owner_profile');
       if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed.id) return parsed;
-        } catch (_) {}
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.id) return parsed;
       }
-    }
+    } catch (_) {}
     return null;
   });
+
+  const [shop, setShop] = useState<Shop | null>(() => {
+    try {
+      const saved = localStorage.getItem('foodfax_owner_shop');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.id) return parsed;
+      }
+    } catch (_) {}
+    return null;
+  });
+
+  const [activeScreen, setActiveScreenState] = useState<ActiveScreen>(() => {
+    try {
+      const savedProfile = localStorage.getItem('foodfax_owner_profile');
+      const savedScreen = localStorage.getItem('foodfax_active_screen') as ActiveScreen | null;
+      if (savedProfile) {
+        const parsedProfile = JSON.parse(savedProfile);
+        if (parsedProfile && parsedProfile.id) {
+          const savedShop = localStorage.getItem('foodfax_owner_shop');
+          if (savedShop) {
+            const parsedShop = JSON.parse(savedShop);
+            if (parsedShop && parsedShop.name) {
+              const isApproved = Boolean(
+                parsedShop.is_active === true ||
+                parsedShop.kyc_status === 'approved' ||
+                parsedShop.kycStatus === 'approved'
+              );
+              if (isApproved) {
+                if (savedScreen && ['dashboard', 'orders', 'menu', 'sales', 'shop_qr', 'profile'].includes(savedScreen)) {
+                  return savedScreen;
+                }
+                return 'dashboard';
+              }
+              return 'kyc_status';
+            }
+            return 'shop_setup';
+          }
+          return 'shop_setup';
+        }
+      }
+      const hasOnboarded = localStorage.getItem('foodfax_has_onboarded');
+      return hasOnboarded === 'true' ? 'login' : 'onboarding';
+    } catch (_) {
+      return 'login';
+    }
+  });
+
+  // Persist active screen changes
+  useEffect(() => {
+    if (activeScreen && !['splash', 'onboarding'].includes(activeScreen)) {
+      try {
+        localStorage.setItem('foodfax_active_screen', activeScreen);
+      } catch (_) {}
+    }
+  }, [activeScreen]);
 
   // Strict Anti-Bypass Guard: Block unauthenticated access to internal screens
   const setActiveScreen = useCallback((screenOrUpdater: ActiveScreen | ((prev: ActiveScreen) => ActiveScreen)) => {
@@ -211,17 +268,6 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
     setActiveScreenState(screenOrUpdater);
   }, [ownerProfile]);
-
-  const [shop, setShop] = useState<Shop | null>(() => {
-    const saved = localStorage.getItem('foodfax_owner_shop');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.id) return parsed;
-      } catch (_) {}
-    }
-    return null;
-  });
 
   const [availableShops, setAvailableShops] = useState<Shop[]>([]);
 
@@ -282,6 +328,20 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
   const [isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+
+  // Authentication Token & Session Expiration State (60s Warning)
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem('foodfax_session_expires_at');
+      if (saved) {
+        const val = Number(saved);
+        if (!isNaN(val) && val > Date.now()) return val;
+      }
+    } catch (_) {}
+    return null;
+  });
+  const [isSessionExpiring, setIsSessionExpiring] = useState<boolean>(false);
+  const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<number>(3600);
 
   // Monitor connectivity and synchronize offline mutation queue
   useEffect(() => {
@@ -404,17 +464,17 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
   // Persist local state
   useEffect(() => {
     if (ownerProfile) {
-      localStorage.setItem('foodfax_owner_profile', JSON.stringify(ownerProfile));
-    } else {
-      localStorage.removeItem('foodfax_owner_profile');
+      try {
+        localStorage.setItem('foodfax_owner_profile', JSON.stringify(ownerProfile));
+      } catch (_) {}
     }
   }, [ownerProfile]);
 
   useEffect(() => {
     if (shop) {
-      localStorage.setItem('foodfax_owner_shop', JSON.stringify(shop));
-    } else {
-      localStorage.removeItem('foodfax_owner_shop');
+      try {
+        localStorage.setItem('foodfax_owner_shop', JSON.stringify(shop));
+      } catch (_) {}
     }
   }, [shop]);
 
@@ -646,7 +706,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         );
 
         setActiveScreen((prev) => {
-          if (prev === 'splash') {
+          if (prev === 'splash' || prev === 'login') {
             return isApproved ? 'dashboard' : 'kyc_status';
           }
           return prev;
@@ -659,7 +719,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         setOrders([]);
         setMenuCategories(DEFAULT_MENU_CATEGORIES);
         setMenuItems([]);
-        setActiveScreen((prev) => (prev === 'splash' ? 'login' : prev));
+        setActiveScreen((prev) => (prev === 'splash' || prev === 'login' ? 'shop_setup' : prev));
         return null;
       }
     } catch (err) {
@@ -706,56 +766,82 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toLocaleString() : null,
         });
 
-        if (session?.user) {
-          console.log('[OwnerAppProvider] ✅ Active session detected! Restoring user data for:', session.user.id);
+        // Check for either Supabase session OR persistent saved owner profile in localStorage
+        const savedProfileRaw = localStorage.getItem('foodfax_owner_profile');
+        let savedProfile: OwnerProfile | null = null;
+        if (savedProfileRaw) {
           try {
-            await loadDatabaseData(session.user.id);
+            const parsed = JSON.parse(savedProfileRaw);
+            if (parsed && parsed.id) savedProfile = parsed;
+          } catch (_) {}
+        }
+
+        const effectiveUserId = session?.user?.id || savedProfile?.id;
+
+        if (effectiveUserId) {
+          console.log('[OwnerAppProvider] ✅ Active authenticated session detected! User ID:', effectiveUserId);
+          try {
+            if (savedProfile) {
+              setOwnerProfile(savedProfile);
+            }
+            const savedShopRaw = localStorage.getItem('foodfax_owner_shop');
+            let initialShopId: string | undefined = undefined;
+            if (savedShopRaw) {
+              try {
+                const s = JSON.parse(savedShopRaw);
+                if (s?.id) initialShopId = s.id;
+              } catch (_) {}
+            }
+            const loadedShop = await loadDatabaseData(effectiveUserId, initialShopId);
+            const targetShop = loadedShop || (savedShopRaw ? JSON.parse(savedShopRaw) : null);
+            if (targetShop && targetShop.name) {
+              const isApproved = Boolean(
+                targetShop.is_active === true ||
+                targetShop.kyc_status === 'approved' ||
+                targetShop.kycStatus === 'approved'
+              );
+              setActiveScreenState((prev) => {
+                if (['splash', 'login', 'onboarding'].includes(prev)) {
+                  return isApproved ? 'dashboard' : 'kyc_status';
+                }
+                return prev;
+              });
+            } else {
+              setActiveScreenState((prev) => {
+                if (['splash', 'login', 'onboarding'].includes(prev)) {
+                  return 'shop_setup';
+                }
+                return prev;
+              });
+            }
+          } catch (err) {
+            console.warn('Error loading database data on startup:', err);
           } finally {
             setIsLoading(false);
           }
         } else {
-          console.log('[OwnerAppProvider] ℹ️ No active session returned by getSession(). Enforcing clean unauthenticated state.');
-          
-          let hasOfflineAccess = false;
-          // Only permit offline access if genuinely offline AND cryptographic binding is valid
-          if (typeof navigator !== 'undefined' && !navigator.onLine) {
-            const savedProfile = localStorage.getItem('foodfax_owner_profile');
-            if (savedProfile) {
-              try {
-                const parsed = JSON.parse(savedProfile);
-                const savedShop = localStorage.getItem('foodfax_owner_shop');
-                if (parsed?.id && savedShop) {
-                  const parsedShop = JSON.parse(savedShop);
-                  const bindingCheck = await verifyShopBinding(parsed.id, parsedShop.id);
-                  if (bindingCheck.valid) {
-                    setOwnerProfile(parsed);
-                    await loadDatabaseData(parsed.id);
-                    hasOfflineAccess = true;
-                  }
-                }
-              } catch (_) {}
-            }
-          }
-
-          if (!hasOfflineAccess) {
-            // Clean up any stale unauthenticated storage to strictly avoid session bypass
-            authSecurityService.purgeAllAuthStorage();
-            setOwnerProfile(null);
-            setShop(null);
-          }
-
+          console.log('[OwnerAppProvider] ℹ️ No session or saved profile. Enforcing unauthenticated state.');
+          setOwnerProfile(null);
+          setShop(null);
           setIsLoading(false);
-
-          if (!hasOfflineAccess) {
-            const hasOnboarded = localStorage.getItem('foodfax_has_onboarded');
-            const targetScreen: ActiveScreen = hasOnboarded === 'true' ? 'login' : 'onboarding';
-            setActiveScreenState((prev) => (prev === 'splash' ? targetScreen : prev));
-          }
+          const hasOnboarded = localStorage.getItem('foodfax_has_onboarded');
+          const targetScreen: ActiveScreen = hasOnboarded === 'true' ? 'login' : 'onboarding';
+          setActiveScreenState((prev) => (prev === 'splash' ? targetScreen : prev));
         }
       })
       .catch((err) => {
         console.error('[OwnerAppProvider] ❌ Error in supabase.auth.getSession():', err);
-        authSecurityService.purgeAllAuthStorage();
+        const savedProfileRaw = localStorage.getItem('foodfax_owner_profile');
+        if (savedProfileRaw) {
+          try {
+            const parsed = JSON.parse(savedProfileRaw);
+            if (parsed && parsed.id) {
+              setOwnerProfile(parsed);
+              loadDatabaseData(parsed.id).finally(() => setIsLoading(false));
+              return;
+            }
+          } catch (_) {}
+        }
         setOwnerProfile(null);
         setShop(null);
         setIsLoading(false);
@@ -1503,6 +1589,11 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
     purgeShopBinding();
     authSecurityService.purgeAllAuthStorage();
+    setSessionExpiresAt(null);
+    setIsSessionExpiring(false);
+    try {
+      localStorage.removeItem('foodfax_session_expires_at');
+    } catch (_) {}
     setOwnerProfile(null);
     setShop(null);
     setOrders([]);
@@ -1510,6 +1601,87 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     setMenuCategories([]);
     setActiveScreenState('login');
   };
+
+  // AUTH: Extend active session by refreshing Supabase token or adding 60 mins
+  const extendSession = useCallback(async (): Promise<boolean> => {
+    try {
+      const client = getSupabaseClient();
+      let newExpiry = Date.now() + 60 * 60 * 1000; // 60 minutes default
+
+      if (client) {
+        try {
+          const { data, error } = await client.auth.refreshSession();
+          if (!error && data?.session?.expires_at) {
+            newExpiry = data.session.expires_at * 1000;
+          }
+        } catch (_) {}
+      }
+
+      setSessionExpiresAt(newExpiry);
+      setSessionRemainingSeconds(Math.max(0, Math.floor((newExpiry - Date.now()) / 1000)));
+      setIsSessionExpiring(false);
+      try {
+        localStorage.setItem('foodfax_session_expires_at', String(newExpiry));
+      } catch (_) {}
+
+      console.log('[Session] ✅ Session successfully extended until:', new Date(newExpiry).toLocaleTimeString());
+      return true;
+    } catch (err) {
+      console.error('[Session] Failed to extend session:', err);
+      return false;
+    }
+  }, []);
+
+  // DEV/TEST: Trigger 60s warning for immediate verification
+  const triggerTestSessionWarning = useCallback(() => {
+    const testExpiry = Date.now() + 59 * 1000; // 59s remaining
+    setSessionExpiresAt(testExpiry);
+    setSessionRemainingSeconds(59);
+    setIsSessionExpiring(true);
+    try {
+      localStorage.setItem('foodfax_session_expires_at', String(testExpiry));
+    } catch (_) {}
+    console.log('[Session] ⏱️ 60-second session expiration warning modal triggered!');
+  }, []);
+
+  // Session Expiration Monitoring Effect: Ticks every 1s when logged in
+  useEffect(() => {
+    if (!ownerProfile) {
+      setIsSessionExpiring(false);
+      return;
+    }
+
+    // Ensure sessionExpiresAt has a valid value if logged in
+    if (!sessionExpiresAt) {
+      const freshExpiry = Date.now() + 60 * 60 * 1000;
+      setSessionExpiresAt(freshExpiry);
+      try {
+        localStorage.setItem('foodfax_session_expires_at', String(freshExpiry));
+      } catch (_) {}
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const diffSec = Math.floor((sessionExpiresAt - now) / 1000);
+      const remaining = Math.max(0, diffSec);
+      setSessionRemainingSeconds(remaining);
+
+      // Warning appears 60 seconds before expiration
+      if (remaining <= 60 && remaining > 0) {
+        setIsSessionExpiring(true);
+      } else if (remaining === 0) {
+        setIsSessionExpiring(false);
+        console.warn('[Session] Session expired due to timeout. Auto-logging out.');
+        logout();
+        setErrorMessage('Your session has expired. Please sign in again.');
+      } else {
+        setIsSessionExpiring(false);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [ownerProfile, sessionExpiresAt]);
 
   // SHOP SETUP / UPDATE in Supabase 'public.shops' table
   const saveShop = async (shopData: Partial<Shop>): Promise<boolean> => {
@@ -2393,6 +2565,11 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       resetOtpCode,
       checkKycStatus,
       getSupabaseClient,
+      sessionExpiresAt,
+      isSessionExpiring,
+      sessionRemainingSeconds,
+      extendSession,
+      triggerTestSessionWarning,
     }),
     [
       activeScreen,
@@ -2450,6 +2627,11 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       resetPasswordWithOtp,
       resetOtpCode,
       checkKycStatus,
+      sessionExpiresAt,
+      isSessionExpiring,
+      sessionRemainingSeconds,
+      extendSession,
+      triggerTestSessionWarning,
     ]
   );
 

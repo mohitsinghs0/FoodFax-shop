@@ -51,6 +51,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
   const [locating, setLocating] = useState(false);
   const [showMapModal, setShowMapModal] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const photoFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -60,7 +61,8 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (JPG, PNG, WebP).');
+      setErrorMsg('Please select a valid image file (JPG, PNG, WebP).');
+      setTimeout(() => setErrorMsg(null), 4000);
       return;
     }
 
@@ -97,13 +99,15 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
       };
       img.onerror = () => {
         setIsUploadingPhoto(false);
-        alert('Failed to process image file.');
+        setErrorMsg('Failed to process image file.');
+        setTimeout(() => setErrorMsg(null), 4000);
       };
       img.src = event.target?.result as string;
     };
     reader.onerror = () => {
       setIsUploadingPhoto(false);
-      alert('Failed to read image file.');
+      setErrorMsg('Failed to read image file.');
+      setTimeout(() => setErrorMsg(null), 4000);
     };
     reader.readAsDataURL(file);
   };
@@ -111,7 +115,8 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
   // Update Current Stall Location (On-demand GPS, explicit click only)
   const handleUpdateCurrentLocation = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
+      setErrorMsg('Geolocation is not supported by your browser.');
+      setTimeout(() => setErrorMsg(null), 4000);
       return;
     }
 
@@ -144,7 +149,8 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
       (err) => {
         console.warn('Geolocation error:', err);
         setLocating(false);
-        alert('Could not retrieve current GPS coordinates. Please use Edit Location on Map.');
+        setErrorMsg('Could not retrieve current GPS coordinates. Please use Edit Location on Map.');
+        setTimeout(() => setErrorMsg(null), 4000);
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
@@ -223,6 +229,13 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({ onClose }) =
           <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center gap-2">
             <Check className="w-4 h-4" />
             <span>{saveSuccessMsg}</span>
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center gap-2">
+            <X className="w-4 h-4" />
+            <span>{errorMsg}</span>
           </div>
         )}
 

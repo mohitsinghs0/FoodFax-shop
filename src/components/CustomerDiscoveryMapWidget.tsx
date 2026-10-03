@@ -52,7 +52,8 @@ export const CustomerDiscoveryMapWidget: React.FC<CustomerDiscoveryMapWidgetProp
   // Request Customer Location on demand (Single explicit action)
   const handleRequestCustomerLocation = () => {
     if (!navigator.geolocation) {
-      alert('Browser does not support geolocation.');
+      console.warn('Browser does not support geolocation.');
+      setIsLocatingCustomer(false);
       return;
     }
     setIsLocatingCustomer(true);

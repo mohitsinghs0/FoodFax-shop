@@ -16,11 +16,14 @@ import {
 export const OrderDetailsModal: React.FC = () => {
   const { selectedOrderId, setSelectedOrderId, orders, updateOrderStatus } = useOwnerApp();
   const [showKot, setShowKot] = useState(false);
+  const [printerSent, setPrinterSent] = useState(false);
 
   if (!selectedOrderId) return null;
 
   const order = orders.find((o) => o.id === selectedOrderId);
   if (!order) return null;
+
+  const items = order.items || [];
 
   const stages = [
     { key: 'pending', label: 'Pending' },
@@ -82,7 +85,7 @@ export const OrderDetailsModal: React.FC = () => {
             </div>
 
             <div className="space-y-1.5 py-1">
-              {order.items.map((i, idx) => (
+              {items.map((i, idx) => (
                 <div key={idx} className="flex justify-between items-start font-bold">
                   <div>
                     <span>
@@ -96,15 +99,18 @@ export const OrderDetailsModal: React.FC = () => {
             </div>
 
             <div className="border-t border-black pt-2 flex justify-between font-extrabold text-sm">
-              <span>TOTAL ITEMS: {order.items.reduce((a, b) => a + b.quantity, 0)}</span>
+              <span>TOTAL ITEMS: {items.reduce((a, b) => a + b.quantity, 0)}</span>
               <span>₹{order.totalAmount}</span>
             </div>
 
             <button
-              onClick={() => alert('Sending raw ESC/POS payload to USB/Bluetooth Thermal Receipt Printer...')}
-              className="w-full mt-3 py-2 bg-black text-white font-bold rounded-lg hover:bg-neutral-800 text-xs"
+              onClick={() => {
+                setPrinterSent(true);
+                setTimeout(() => setPrinterSent(false), 3000);
+              }}
+              className="w-full mt-3 py-2 bg-black text-white font-bold rounded-lg hover:bg-neutral-800 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
             >
-              Send to Kitchen Thermal Printer
+              {printerSent ? 'Sent to Kitchen Thermal Printer!' : 'Send to Kitchen Thermal Printer'}
             </button>
           </div>
         ) : (
@@ -164,10 +170,10 @@ export const OrderDetailsModal: React.FC = () => {
             {/* Items Breakdown */}
             <div>
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                Order Items ({order.items.length})
+                Order Items ({items.length})
               </h4>
               <div className="bg-slate-950 rounded-2xl p-3 border border-slate-850 space-y-2.5">
-                {order.items.map((item, idx) => (
+                {items.map((item, idx) => (
                   <div key={idx} className="flex justify-between items-start text-xs border-b border-slate-900 pb-2 last:border-0 last:pb-0">
                     <div>
                       <div className="flex items-center gap-1.5">

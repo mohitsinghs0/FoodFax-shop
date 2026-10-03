@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { apiCache, LatencyMetric } from '../services/apiCache';
+import { useOwnerApp } from '../context/OwnerAppContext';
 import {
   Activity,
   Zap,
@@ -15,6 +16,7 @@ import {
   Sparkles,
   BarChart3,
   Flame,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface OptimizationDiagnosticsModalProps {
@@ -38,6 +40,8 @@ export const OptimizationDiagnosticsModal: React.FC<OptimizationDiagnosticsModal
     cachedTimeMs: number;
     speedup: string;
   } | null>(null);
+
+  const { sessionRemainingSeconds, extendSession, triggerTestSessionWarning } = useOwnerApp();
 
   useEffect(() => {
     const unsubscribe = apiCache.subscribe((newMetrics) => {
@@ -217,6 +221,40 @@ export const OptimizationDiagnosticsModal: React.FC<OptimizationDiagnosticsModal
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Auth Session Expiration Card & 60s Warning Tester */}
+              <div className="bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs text-white">Auth Token &amp; Session Status</h4>
+                      <p className="text-[11px] text-slate-400">
+                        Expires in: <span className="text-amber-400 font-mono font-bold">{Math.floor(sessionRemainingSeconds / 60)}m {sessionRemainingSeconds % 60}s</span> (Modal appears at 60s)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => {
+                        triggerTestSessionWarning();
+                        onClose();
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-400 text-xs font-bold transition cursor-pointer"
+                    >
+                      Test 60s Warning
+                    </button>
+                    <button
+                      onClick={() => extendSession()}
+                      className="px-2.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition shadow-sm cursor-pointer"
+                    >
+                      Extend Session (+60m)
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Latency Log Stream */}

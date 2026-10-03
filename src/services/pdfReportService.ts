@@ -203,17 +203,23 @@ export function generateSalesSummaryPdf(params: SalesReportParams): void {
     columnStyles: {
       0: { cellWidth: 8, halign: 'center' },
       1: { cellWidth: 18, fontStyle: 'bold', halign: 'center' },
-      2: { cellWidth: 26, halign: 'left' },
-      3: { cellWidth: 25, halign: 'left' },
-      4: { cellWidth: 19, halign: 'center', fontSize: 7 },
-      5: { cellWidth: 47, halign: 'left' },
-      6: { cellWidth: 18, halign: 'center' },
-      7: { cellWidth: 21, halign: 'right', fontStyle: 'bold' },
+      2: { cellWidth: 25, halign: 'left' },
+      3: { cellWidth: 24, halign: 'left' },
+      4: { cellWidth: 18, halign: 'center', fontSize: 7 },
+      5: { cellWidth: 44, halign: 'left' },
+      6: { cellWidth: 17, halign: 'center' },
+      7: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
     },
     didParseCell: (data) => {
-      // Ensure header, body and footer for Amount column align cleanly to the right
+      // Ensure header, body and footer for Amount column align cleanly to the right with comfortable inset margin
       if (data.column.index === 7) {
         data.cell.styles.halign = 'right';
+        data.cell.styles.cellPadding = {
+          top: data.section === 'head' || data.section === 'foot' ? 3.5 : 2.5,
+          right: 4.5,
+          bottom: data.section === 'head' || data.section === 'foot' ? 3.5 : 2.5,
+          left: 2,
+        };
       }
       if (data.section === 'foot' && data.column.index === 5) {
         data.cell.styles.fontStyle = 'bold';

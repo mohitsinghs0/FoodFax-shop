@@ -323,7 +323,7 @@ export const GoogleMapsLocationPicker: React.FC<GoogleMapsLocationPickerProps> =
         return;
       }
     }
-    alert('Please enter coordinates in format: 19.076090, 72.877712');
+    setGpsErrorMsg('Please enter coordinates in format: 19.076090, 72.877712');
   };
 
   // Save confirmed location

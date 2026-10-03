@@ -12,6 +12,7 @@ import { DesktopSidebar } from './components/DesktopSidebar';
 import { ScreenSkeletonFallback } from './components/ScreenSkeletonFallback';
 import { MenuItem, ActiveScreen } from './types';
 import { Zap } from 'lucide-react';
+import { SessionExpiringModal } from './components/SessionExpiringModal';
 
 // LAZY LOADED ROUTE CHUNKS FOR SIGNIFICANT INITIAL BUNDLE REDUCTION
 const SplashScreen = lazy(() => import('./screens/SplashScreen').then(m => ({ default: m.SplashScreen })));
@@ -99,7 +100,7 @@ const MainAppContent: React.FC = () => {
         )}
 
         {/* Screen Router wrapped in Suspense with smooth Skeleton Loader */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative overscroll-contain">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative overscroll-contain pb-20 lg:pb-0">
           <Suspense fallback={<ScreenSkeletonFallback />}>
             {effectiveScreen === 'splash' && <SplashScreen />}
             {effectiveScreen === 'onboarding' && <OnboardingScreen />}
@@ -174,6 +175,9 @@ const MainAppContent: React.FC = () => {
           />
         )}
       </Suspense>
+
+      {/* Session Expiring 60s Warning Modal */}
+      <SessionExpiringModal />
     </MobileFrame>
   );
 };

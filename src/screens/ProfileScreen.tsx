@@ -40,7 +40,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const currentShopPhoto = shop?.logoUrl || shop?.bannerUrl;
 
   return (
-    <div className="text-[#F8FAFC] pb-8 select-none">
+    <div className="text-[#F8FAFC] min-h-full pb-28 lg:pb-12 select-none">
       {/* In-page Screen Header with Back to Dashboard */}
       <div className="px-4 py-3 border-b border-[#131B2E] flex items-center gap-3 bg-[#0B0F19]">
         <button

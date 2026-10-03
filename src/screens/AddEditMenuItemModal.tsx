@@ -42,6 +42,7 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
   const [isAddingCat, setIsAddingCat] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -92,7 +93,8 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (JPG, PNG, WebP).');
+      setImageError('Please select a valid image file (JPG, PNG, WebP).');
+      setTimeout(() => setImageError(null), 4000);
       return;
     }
 
@@ -137,7 +139,8 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
     };
     reader.onerror = () => {
       setIsUploadingImage(false);
-      alert('Failed to read the selected image file.');
+      setImageError('Failed to read the selected image file.');
+      setTimeout(() => setImageError(null), 4000);
     };
     reader.readAsDataURL(file);
   };
@@ -277,6 +280,12 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
                     Take photo from camera or upload from gallery
                   </p>
                 </div>
+
+                {imageError && (
+                  <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold">
+                    {imageError}
+                  </div>
+                )}
 
                 {/* Alternative URL paste */}
                 <div className="flex items-center justify-between text-[11px] px-1">

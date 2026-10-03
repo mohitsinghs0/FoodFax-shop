@@ -63,7 +63,7 @@ export const ShopQrScreen: React.FC = () => {
     : ['Table 1', 'Table 2', 'Table 3', 'Table 4'];
 
   return (
-    <div className="text-[#F8FAFC] pb-10 select-none">
+    <div className="text-[#F8FAFC] min-h-full pb-28 lg:pb-12 select-none">
       {/* Screen Title & Back Button */}
       <div className="px-4 py-3 border-b border-[#131B2E] flex items-center justify-between bg-[#0B0F19]">
         <div className="flex items-center gap-3">

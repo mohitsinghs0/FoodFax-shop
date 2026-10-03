@@ -98,9 +98,9 @@ export const OrdersScreen: React.FC = () => {
       }
       if (!q) return true;
       return (
-        o.orderNumber.toLowerCase().includes(q) ||
-        o.customerName.toLowerCase().includes(q) ||
-        o.customerPhone.includes(q)
+        (o.orderNumber || '').toLowerCase().includes(q) ||
+        (o.customerName || '').toLowerCase().includes(q) ||
+        (o.customerPhone || '').includes(q)
       );
     });
   }, [viewMode, activeOrders, historyOrders, activeTab, searchQuery]);
@@ -165,7 +165,7 @@ export const OrdersScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] pb-28 select-none">
+    <div className="min-h-full bg-[#0B0F19] text-[#F8FAFC] pb-28 select-none">
       {/* Top App Bar matching Photo 2 */}
       <div className="px-4 py-3.5 border-b border-[#131B2E] flex items-center justify-between sticky top-0 bg-[#0B0F19] z-20">
         <div className="flex items-center gap-3">

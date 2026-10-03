@@ -38,7 +38,7 @@ export const BottomNavBar: React.FC = () => {
   ];
 
   return (
-    <nav className="sticky bottom-0 left-0 right-0 bg-[#0B0F19]/95 backdrop-blur-md border-t border-[#1E293B] w-full shrink-0 z-40 select-none shadow-[0_-4px_20px_rgba(0,0,0,0.6)] pb-[env(safe-area-inset-bottom,0px)] lg:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F19]/95 backdrop-blur-md border-t border-[#1E293B] w-full select-none shadow-[0_-4px_25px_rgba(0,0,0,0.8)] pb-[env(safe-area-inset-bottom,0px)] lg:hidden">
       <div className="grid grid-cols-5 h-16 w-full max-w-[440px] mx-auto items-stretch px-1">
         {navItems.map((item) => {
           const isActive = activeScreen === item.screen;

@@ -115,10 +115,11 @@ export const SalesScreen: React.FC = () => {
   const itemCounts = useMemo(() => {
     const map = new Map<string, { name: string; count: number; revenue: number }>();
     completedOrders.forEach((o) => {
-      o.items.forEach((item) => {
+      (o.items || []).forEach((item) => {
+        if (!item || !item.name) return;
         const existing = map.get(item.name) || { name: item.name, count: 0, revenue: 0 };
-        existing.count += item.quantity;
-        existing.revenue += item.price * item.quantity;
+        existing.count += (item.quantity || 0);
+        existing.revenue += (item.price || 0) * (item.quantity || 0);
         map.set(item.name, existing);
       });
     });

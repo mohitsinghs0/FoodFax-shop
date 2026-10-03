@@ -60,7 +60,7 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ onOpenAddItem }) => {
       if (selectedCatId !== 'all' && item.categoryId !== selectedCatId) return false;
       if (!q) return true;
       return (
-        item.name.toLowerCase().includes(q) ||
+        (item.name || '').toLowerCase().includes(q) ||
         (item.description && item.description.toLowerCase().includes(q)) ||
         (item.tag && item.tag.toLowerCase().includes(q))
       );
