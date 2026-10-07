@@ -13,7 +13,10 @@ import {
   Calendar,
   Sparkles,
   ArrowRight,
-  Edit3
+  Edit3,
+  FileText,
+  FileBadge,
+  Award
 } from 'lucide-react';
 
 export const KycStatusScreen: React.FC = () => {
@@ -296,6 +299,88 @@ export const KycStatusScreen: React.FC = () => {
                   Settlement UPI: <span className="text-orange-400">{shop.upiId}</span>
                 </p>
               )}
+            </div>
+
+            {/* Submitted Verification Documents Summary */}
+            <div className="pt-2.5 border-t border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  Submitted Verification Documents
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveScreen('shop_setup')}
+                  className="text-[10px] text-orange-400 hover:text-orange-300 font-bold flex items-center gap-1 transition cursor-pointer"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  Edit Documents
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                {/* 1. FSSAI License */}
+                <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
+                  <span className="text-slate-400 font-semibold truncate">FSSAI Food License</span>
+                  <div className="mt-1 flex items-center gap-1 font-mono text-slate-200">
+                    {shop.fssaiDocUrl || shop.fssaiNumber ? (
+                      <span className="text-emerald-400 font-bold flex items-center gap-0.5">
+                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                        {shop.fssaiNumber ? `#${shop.fssaiNumber.slice(-4)}` : 'Attached'}
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">Not uploaded</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Owner ID */}
+                <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
+                  <span className="text-slate-400 font-semibold truncate">Owner ID ({shop.ownerIdType?.toUpperCase() || 'ID'})</span>
+                  <div className="mt-1 flex items-center gap-1 font-mono text-slate-200">
+                    {shop.ownerIdDocUrl || shop.ownerIdNumber ? (
+                      <span className="text-emerald-400 font-bold flex items-center gap-0.5">
+                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                        {shop.ownerIdNumber ? `#${shop.ownerIdNumber.slice(-4)}` : 'Attached'}
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">Not uploaded</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Address Verification */}
+                <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
+                  <span className="text-slate-400 font-semibold truncate">Address Proof</span>
+                  <div className="mt-1 flex items-center gap-1 text-slate-200">
+                    {shop.addressProofDocUrl ? (
+                      <span className="text-emerald-400 font-bold flex items-center gap-0.5">
+                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                        Attached
+                      </span>
+                    ) : shop.isMobileStall ? (
+                      <span className="text-blue-400 font-semibold text-[9px]">Exempted (Stall)</span>
+                    ) : (
+                      <span className="text-slate-500">Not uploaded</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4. Municipal Trade Permit */}
+                <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
+                  <span className="text-slate-400 font-semibold truncate">Municipal Permit</span>
+                  <div className="mt-1 flex items-center gap-1 font-mono text-slate-200">
+                    {shop.tradePermitDocUrl || shop.tradePermitNumber ? (
+                      <span className="text-emerald-400 font-bold flex items-center gap-0.5">
+                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                        {shop.tradePermitNumber ? `#${shop.tradePermitNumber.slice(-4)}` : 'Attached'}
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">Not uploaded</span>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

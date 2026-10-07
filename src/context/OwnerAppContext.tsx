@@ -603,9 +603,66 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
               if (parsedSaved.diningSections) targetShop.diningSections = parsedSaved.diningSections;
               if (parsedSaved.logoUrl && !targetShop.logoUrl) targetShop.logoUrl = parsedSaved.logoUrl;
               if (parsedSaved.bannerUrl && !targetShop.bannerUrl) targetShop.bannerUrl = parsedSaved.bannerUrl;
+
+              // Restore KYC uploaded documents and details
+              if (parsedSaved.fssaiNumber) targetShop.fssaiNumber = parsedSaved.fssaiNumber;
+              if (parsedSaved.fssaiDocUrl) targetShop.fssaiDocUrl = parsedSaved.fssaiDocUrl;
+              if (parsedSaved.fssaiDocName) targetShop.fssaiDocName = parsedSaved.fssaiDocName;
+
+              if (parsedSaved.ownerIdType) targetShop.ownerIdType = parsedSaved.ownerIdType;
+              if (parsedSaved.ownerIdNumber) targetShop.ownerIdNumber = parsedSaved.ownerIdNumber;
+              if (parsedSaved.ownerIdDocUrl) targetShop.ownerIdDocUrl = parsedSaved.ownerIdDocUrl;
+              if (parsedSaved.ownerIdDocName) targetShop.ownerIdDocName = parsedSaved.ownerIdDocName;
+
+              if (parsedSaved.addressProofType) targetShop.addressProofType = parsedSaved.addressProofType;
+              if (parsedSaved.addressProofDocUrl) targetShop.addressProofDocUrl = parsedSaved.addressProofDocUrl;
+              if (parsedSaved.addressProofDocName) targetShop.addressProofDocName = parsedSaved.addressProofDocName;
+
+              if (parsedSaved.tradePermitType) targetShop.tradePermitType = parsedSaved.tradePermitType;
+              if (parsedSaved.tradePermitNumber) targetShop.tradePermitNumber = parsedSaved.tradePermitNumber;
+              if (parsedSaved.tradePermitDocUrl) targetShop.tradePermitDocUrl = parsedSaved.tradePermitDocUrl;
+              if (parsedSaved.tradePermitDocName) targetShop.tradePermitDocName = parsedSaved.tradePermitDocName;
+
+              if (parsedSaved.kycDocuments) targetShop.kycDocuments = parsedSaved.kycDocuments;
             }
           } catch (_) {}
         }
+
+        // Try reading KYC documents from Supabase kyc_documents table
+        try {
+          const { data: dbKycDocs } = await client
+            .from('kyc_documents')
+            .select('*')
+            .eq('shop_id', targetShop.id);
+
+          if (dbKycDocs && dbKycDocs.length > 0) {
+            targetShop.kycDocuments = {
+              ...(targetShop.kycDocuments || {}),
+              submittedAt: dbKycDocs[0].created_at || new Date().toISOString(),
+            };
+            dbKycDocs.forEach((doc: any) => {
+              if (doc.document_type === 'fssai') {
+                targetShop.fssaiDocUrl = doc.document_url;
+                targetShop.fssaiDocName = doc.document_name;
+                targetShop.fssaiNumber = doc.document_number;
+              } else if (doc.document_type === 'owner_id') {
+                targetShop.ownerIdDocUrl = doc.document_url;
+                targetShop.ownerIdDocName = doc.document_name;
+                targetShop.ownerIdNumber = doc.document_number;
+              } else if (doc.document_type === 'address_proof') {
+                targetShop.addressProofDocUrl = doc.document_url;
+                targetShop.addressProofDocName = doc.document_name;
+              } else if (doc.document_type === 'trade_permit') {
+                targetShop.tradePermitDocUrl = doc.document_url;
+                targetShop.tradePermitDocName = doc.document_name;
+                targetShop.tradePermitNumber = doc.document_number;
+              }
+            });
+          } else if (targetShop.kycDocuments || targetShop.fssaiDocUrl || targetShop.ownerIdDocUrl) {
+            // Auto sync cached local documents to Supabase
+            syncKycDocumentsToSupabase(client, targetShop).catch(() => {});
+          }
+        } catch (_) {}
         if (!targetShop.diningTables || targetShop.diningTables.length === 0) {
           targetShop.diningTables = ['Table 1', 'Table 2', 'Table 3', 'Table 4'];
         }
@@ -1684,6 +1741,144 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, [ownerProfile, sessionExpiresAt]);
 
   // SHOP SETUP / UPDATE in Supabase 'public.shops' table
+  const syncKycDocumentsToSupabase = async (client: any, shopToSync: Shop): Promise<void> => {
+    if (!client || !shopToSync?.id) return;
+    const shopId = shopToSync.id;
+    const kyc = shopToSync.kycDocuments || {};
+
+    const docsToSync: Array<{
+      id: string;
+      shop_id: string;
+      document_type: string;
+      document_name: string;
+      document_number?: string;
+      document_url: string;
+      status: string;
+      rejection_reason?: string | null;
+      updated_at: string;
+    }> = [];
+
+    const now = new Date().toISOString();
+
+    // 1. FSSAI Food Safety License
+    const fssaiUrl = shopToSync.fssaiDocUrl || kyc.fssaiDocUrl;
+    const fssaiNum = shopToSync.fssaiNumber || kyc.fssaiNumber;
+    if (fssaiUrl || fssaiNum) {
+      docsToSync.push({
+        id: `kyc_${shopId}_fssai`,
+        shop_id: shopId,
+        document_type: 'fssai',
+        document_name: shopToSync.fssaiDocName || kyc.fssaiDocName || 'FSSAI Food Safety License',
+        document_number: fssaiNum || undefined,
+        document_url: fssaiUrl || '',
+        status: 'pending',
+        rejection_reason: null,
+        updated_at: now,
+      });
+    }
+
+    // 2. Owner Identity Proof (Aadhaar / PAN)
+    const idUrl = shopToSync.ownerIdDocUrl || kyc.ownerIdDocUrl;
+    const idNum = shopToSync.ownerIdNumber || kyc.ownerIdNumber;
+    const idType = shopToSync.ownerIdType || kyc.ownerIdType || 'aadhaar';
+    if (idUrl || idNum) {
+      docsToSync.push({
+        id: `kyc_${shopId}_owner_id`,
+        shop_id: shopId,
+        document_type: 'owner_id',
+        document_name: shopToSync.ownerIdDocName || kyc.ownerIdDocName || (idType === 'pan' ? 'PAN Card' : 'Aadhaar Card'),
+        document_number: idNum || undefined,
+        document_url: idUrl || '',
+        status: 'pending',
+        rejection_reason: null,
+        updated_at: now,
+      });
+    }
+
+    // 3. Address Verification Document
+    const addrUrl = shopToSync.addressProofDocUrl || kyc.addressProofDocUrl;
+    const addrType = shopToSync.addressProofType || kyc.addressProofType || 'Address Verification Document';
+    if (addrUrl || addrType) {
+      docsToSync.push({
+        id: `kyc_${shopId}_address_proof`,
+        shop_id: shopId,
+        document_type: 'address_proof',
+        document_name: shopToSync.addressProofDocName || kyc.addressProofDocName || addrType,
+        document_number: addrType || undefined,
+        document_url: addrUrl || '',
+        status: 'pending',
+        rejection_reason: null,
+        updated_at: now,
+      });
+    }
+
+    // 4. Municipal Street Food Permit / Trade License
+    const permitUrl = shopToSync.tradePermitDocUrl || kyc.tradePermitDocUrl;
+    const permitNum = shopToSync.tradePermitNumber || kyc.tradePermitNumber;
+    const permitType = shopToSync.tradePermitType || kyc.tradePermitType || 'Municipal Food Cart Trade Permit';
+    if (permitUrl || permitNum) {
+      docsToSync.push({
+        id: `kyc_${shopId}_trade_permit`,
+        shop_id: shopId,
+        document_type: 'trade_permit',
+        document_name: shopToSync.tradePermitDocName || kyc.tradePermitDocName || permitType,
+        document_number: permitNum || undefined,
+        document_url: permitUrl || '',
+        status: 'pending',
+        rejection_reason: null,
+        updated_at: now,
+      });
+    }
+
+    if (docsToSync.length === 0) return;
+
+    // 1. Try upserting to public.kyc_documents table
+    try {
+      const { error: kycErr } = await client.from('kyc_documents').upsert(docsToSync);
+      if (!kycErr) {
+        console.log(`[KYC Sync] Synced ${docsToSync.length} documents into 'kyc_documents' table.`);
+      }
+    } catch (_) {}
+
+    // 2. Try upserting to public.shop_documents table
+    try {
+      await client.from('shop_documents').upsert(docsToSync);
+    } catch (_) {}
+
+    // 3. Try updating public.shops table with kyc columns if present
+    try {
+      await client.from('shops').update({
+        kyc_status: 'pending',
+        kyc_documents: {
+          fssaiNumber: fssaiNum,
+          fssaiDocUrl: fssaiUrl,
+          fssaiDocName: shopToSync.fssaiDocName || kyc.fssaiDocName,
+          ownerIdType: idType,
+          ownerIdNumber: idNum,
+          ownerIdDocUrl: idUrl,
+          ownerIdDocName: shopToSync.ownerIdDocName || kyc.ownerIdDocName,
+          addressProofType: addrType,
+          addressProofDocUrl: addrUrl,
+          addressProofDocName: shopToSync.addressProofDocName || kyc.addressProofDocName,
+          tradePermitType: permitType,
+          tradePermitNumber: permitNum,
+          tradePermitDocUrl: permitUrl,
+          tradePermitDocName: shopToSync.tradePermitDocName || kyc.tradePermitDocName,
+          documentsCount: docsToSync.length,
+          submittedAt: now,
+        },
+        fssai_doc_url: fssaiUrl || null,
+        fssai_number: fssaiNum || null,
+        owner_id_doc_url: idUrl || null,
+        owner_id_number: idNum || null,
+        address_proof_doc_url: addrUrl || null,
+        trade_permit_doc_url: permitUrl || null,
+        trade_permit_number: permitNum || null,
+        updated_at: now,
+      }).eq('id', shopId);
+    } catch (_) {}
+  };
+
   const saveShop = async (shopData: Partial<Shop>): Promise<boolean> => {
     setIsLoading(true);
     const client = getSupabaseClient();
@@ -1728,6 +1923,21 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       deliveryRadiusKm: shopData.deliveryRadiusKm ?? shop?.deliveryRadiusKm ?? 3,
       deliveryFeeType: shopData.deliveryFeeType || shop?.deliveryFeeType || 'free',
       deliveryFeeAmount: shopData.deliveryFeeAmount ?? shop?.deliveryFeeAmount ?? 0,
+      fssaiNumber: shopData.fssaiNumber ?? shop?.fssaiNumber,
+      fssaiDocUrl: shopData.fssaiDocUrl ?? shop?.fssaiDocUrl,
+      fssaiDocName: shopData.fssaiDocName ?? shop?.fssaiDocName,
+      ownerIdType: shopData.ownerIdType ?? shop?.ownerIdType ?? 'aadhaar',
+      ownerIdNumber: shopData.ownerIdNumber ?? shop?.ownerIdNumber,
+      ownerIdDocUrl: shopData.ownerIdDocUrl ?? shop?.ownerIdDocUrl,
+      ownerIdDocName: shopData.ownerIdDocName ?? shop?.ownerIdDocName,
+      addressProofType: shopData.addressProofType ?? shop?.addressProofType ?? 'Electricity Bill',
+      addressProofDocUrl: shopData.addressProofDocUrl ?? shop?.addressProofDocUrl,
+      addressProofDocName: shopData.addressProofDocName ?? shop?.addressProofDocName,
+      tradePermitType: shopData.tradePermitType ?? shop?.tradePermitType ?? 'Municipal Street Food Cart Trade Permit',
+      tradePermitNumber: shopData.tradePermitNumber ?? shop?.tradePermitNumber,
+      tradePermitDocUrl: shopData.tradePermitDocUrl ?? shop?.tradePermitDocUrl,
+      tradePermitDocName: shopData.tradePermitDocName ?? shop?.tradePermitDocName,
+      kycDocuments: shopData.kycDocuments ?? shop?.kycDocuments,
       is_active: false,
       kycStatus: 'pending',
       isVerified: false,
@@ -1795,6 +2005,9 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           // Link shop_id in users table
           await client.from('users').update({ shop_id: newShop.id }).eq('id', ownerProfile.id);
         }
+
+        // Sync submitted KYC documents to Supabase kyc_documents table & metadata
+        await syncKycDocumentsToSupabase(client, newShop);
       } catch (e) {
         console.warn('Supabase shop save exception:', e);
       }

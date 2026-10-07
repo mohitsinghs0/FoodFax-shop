@@ -124,7 +124,40 @@ export interface Shop {
   rejection_reason?: string;
   tagline?: string;
   featured_item?: string;
+  fssaiNumber?: string;
+  fssaiDocUrl?: string;
+  fssaiDocName?: string;
+  ownerIdType?: 'aadhaar' | 'pan';
+  ownerIdNumber?: string;
+  ownerIdDocUrl?: string;
+  ownerIdDocName?: string;
+  addressProofType?: string;
+  addressProofDocUrl?: string;
+  addressProofDocName?: string;
+  tradePermitType?: string;
+  tradePermitNumber?: string;
+  tradePermitDocUrl?: string;
+  tradePermitDocName?: string;
+  kycDocuments?: KycDocuments;
   createdAt?: string;
+}
+
+export interface KycDocuments {
+  fssaiNumber?: string;
+  fssaiDocUrl?: string;
+  fssaiDocName?: string;
+  ownerIdType?: 'aadhaar' | 'pan';
+  ownerIdNumber?: string;
+  ownerIdDocUrl?: string;
+  ownerIdDocName?: string;
+  addressProofType?: string;
+  addressProofDocUrl?: string;
+  addressProofDocName?: string;
+  tradePermitType?: string;
+  tradePermitNumber?: string;
+  tradePermitDocUrl?: string;
+  tradePermitDocName?: string;
+  submittedAt?: string;
 }
 
 export interface DashboardCardPreferences {
