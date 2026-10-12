@@ -202,6 +202,61 @@ class SoundNotificationService {
       osc.stop(now + 0.25);
     } catch (_) {}
   }
+
+  /**
+   * KDS Overdue Order Warning Alarm
+   * Triple-pulse urgent restaurant buzzer pattern for kitchen staff
+   * Audible even in noisy kitchen environments without harsh distortion
+   */
+  public playOverdueOrderAlarm(): void {
+    if (!this.soundEnabled) return;
+    try {
+      const ctx = this.getAudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      const now = ctx.currentTime;
+
+      // Master gain for overdue alarm
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.65, now);
+      masterGain.connect(ctx.destination);
+
+      // 3 urgent alert beeps (880Hz A5, 740Hz F#5, 988Hz B5)
+      const pulses = [
+        { freq: 880, start: 0.0, dur: 0.16 },
+        { freq: 740, start: 0.22, dur: 0.16 },
+        { freq: 988, start: 0.44, dur: 0.28 },
+      ];
+
+      pulses.forEach(({ freq, start, dur }) => {
+        const tStart = now + start;
+        const tEnd = tStart + dur;
+
+        const osc = ctx.createOscillator();
+        osc.type = 'sawtooth'; // Kitchen punch cut-through
+
+        // Low-pass filter to smooth harshness
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(1600, tStart);
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, tStart);
+        gain.gain.linearRampToValueAtTime(0.4, tStart + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, tEnd);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(masterGain);
+
+        osc.start(tStart);
+        osc.stop(tEnd);
+      });
+    } catch (e) {
+      console.warn('Overdue alarm playback error:', e);
+    }
+  }
 }
 
 export const soundService = new SoundNotificationService();

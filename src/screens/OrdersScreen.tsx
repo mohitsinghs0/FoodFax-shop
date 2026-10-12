@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
 import { 
   ArrowLeft, 
@@ -20,9 +20,12 @@ import {
   Square,
   Check,
   Layers,
-  Loader2
+  Loader2,
+  AlertTriangle,
+  Flame,
+  Sparkles
 } from 'lucide-react';
-import { OrderStatus } from '../types';
+import { OrderStatus, OwnerOrder } from '../types';
 import { soundService } from '../services/soundService';
 
 export const OrdersScreen: React.FC = () => {
@@ -46,6 +49,18 @@ export const OrdersScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // KDS Overdue Audio Alert State & 10s Ticker
+  const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
+  const [isOverdueAudioMuted, setIsOverdueAudioMuted] = useState<boolean>(false);
+  const lastOverdueAlarmTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTimeMs(Date.now());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Bulk Selection State for kitchen staff
   const [isBulkSelectMode, setIsBulkSelectMode] = useState<boolean>(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
@@ -63,19 +78,50 @@ export const OrdersScreen: React.FC = () => {
     }
   };
 
-  // Status tabs matching Flutter screen
-  const statusTabs = [
-    { id: 'all', label: 'All Active' },
-    { id: 'pending', label: 'Pending' },
-    { id: 'accepted', label: 'Accepted' },
-    { id: 'preparing', label: 'Preparing' },
-    { id: 'ready', label: 'Ready' },
-  ];
+  // Helper to compute live preparation time metrics for an order
+  const getPrepStatus = (order: OwnerOrder) => {
+    const isUnfinished = ['pending', 'accepted', 'preparing'].includes(order.status);
+    const createdAtMs = new Date(order.createdAt).getTime();
+    const elapsedMinutes = Math.max(0, Math.floor((currentTimeMs - (isNaN(createdAtMs) ? currentTimeMs : createdAtMs)) / 60000));
+    const targetMinutes = Math.max(5, (order.estimatedPrepMinutes || 15) + (shop?.isRushMode ? (shop?.rushExtraMinutes || 15) : 0));
+    const isOverdue = isUnfinished && elapsedMinutes > targetMinutes;
+    const overdueMinutes = isOverdue ? elapsedMinutes - targetMinutes : 0;
+    const remainingMinutes = Math.max(0, targetMinutes - elapsedMinutes);
+    const progressPercent = Math.min(100, Math.round((elapsedMinutes / targetMinutes) * 100));
+
+    return {
+      elapsedMinutes,
+      targetMinutes,
+      isOverdue,
+      overdueMinutes,
+      remainingMinutes,
+      progressPercent,
+    };
+  };
 
   // Active non-finalized orders
   const activeOrders = useMemo(() => {
     return orders.filter((o) => ['pending', 'accepted', 'preparing', 'ready'].includes(o.status));
   }, [orders]);
+
+  // List of active orders currently exceeding estimated preparation time
+  const overdueOrders = useMemo(() => {
+    return activeOrders.filter((o) => getPrepStatus(o).isOverdue);
+  }, [activeOrders, currentTimeMs, shop?.isRushMode]);
+
+  // Audio Alert Trigger: Automatically sounds distinct alert when overdue orders exist
+  useEffect(() => {
+    if (viewMode !== 'active' || overdueOrders.length === 0) return;
+    if (isOverdueAudioMuted || !isSoundEnabled) return;
+
+    const now = Date.now();
+    // Play reminder buzzer every 50 seconds while orders are overdue
+    if (now - lastOverdueAlarmTimeRef.current >= 50000) {
+      lastOverdueAlarmTimeRef.current = now;
+      soundService.unlockAudio();
+      soundService.playOverdueOrderAlarm();
+    }
+  }, [overdueOrders.length, isOverdueAudioMuted, isSoundEnabled, viewMode, currentTimeMs]);
 
   // Orders eligible to be marked ready (pending, accepted, or preparing)
   const markableOrders = useMemo(() => {
@@ -87,14 +133,29 @@ export const OrdersScreen: React.FC = () => {
     return orders.filter((o) => ['completed', 'cancelled'].includes(o.status));
   }, [orders]);
 
+  // Status tabs matching KDS workflow with Overdue counter
+  const statusTabs = useMemo(() => [
+    { id: 'all', label: 'All Active' },
+    ...(overdueOrders.length > 0 ? [{ id: 'overdue', label: `⚠️ Overdue (${overdueOrders.length})` }] : []),
+    { id: 'pending', label: 'Pending' },
+    { id: 'accepted', label: 'Accepted' },
+    { id: 'preparing', label: 'Preparing' },
+    { id: 'ready', label: 'Ready' },
+  ], [overdueOrders.length]);
+
   // Filtered orders based on search & tab
   const displayedOrders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const source = viewMode === 'active' ? activeOrders : historyOrders;
 
     return source.filter((o) => {
-      if (viewMode === 'active' && activeTab !== 'all' && o.status !== activeTab) {
-        return false;
+      if (viewMode === 'active') {
+        if (activeTab === 'overdue') {
+          return getPrepStatus(o).isOverdue;
+        }
+        if (activeTab !== 'all' && o.status !== activeTab) {
+          return false;
+        }
       }
       if (!q) return true;
       return (
@@ -103,7 +164,7 @@ export const OrdersScreen: React.FC = () => {
         (o.customerPhone || '').includes(q)
       );
     });
-  }, [viewMode, activeOrders, historyOrders, activeTab, searchQuery]);
+  }, [viewMode, activeOrders, historyOrders, activeTab, searchQuery, currentTimeMs]);
 
   // Toggle single order selection
   const toggleSelectOrder = (orderId: string, e?: React.MouseEvent) => {
@@ -357,6 +418,71 @@ export const OrdersScreen: React.FC = () => {
           </div>
         )}
 
+        {/* KDS Visual & Audio Overdue Warning Banner */}
+        {viewMode === 'active' && overdueOrders.length > 0 && (
+          <div className="bg-gradient-to-r from-red-950/80 via-red-900/40 to-red-950/80 border-2 border-red-500/80 rounded-[18px] p-3.5 shadow-xl shadow-red-950/40 flex flex-col md:flex-row md:items-center justify-between gap-3 animate-pulse-border">
+            <div className="flex items-start md:items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-red-500/25 border border-red-500/50 flex items-center justify-center shrink-0 text-red-400 shadow-inner">
+                <AlertTriangle className="w-5 h-5 text-red-400 animate-bounce" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <Flame className="w-4 h-4 text-red-400 fill-red-500/20" />
+                    KDS Prep Delay Alert: {overdueOrders.length} Order{overdueOrders.length > 1 ? 's' : ''} Overdue!
+                  </h4>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-500 text-white font-black uppercase tracking-wider animate-pulse">
+                    Urgent
+                  </span>
+                </div>
+                <p className="text-[11px] text-red-200/90 font-medium mt-0.5">
+                  Orders exceeding estimated kitchen preparation time:{' '}
+                  <span className="font-bold text-red-100">
+                    {overdueOrders.map((o) => `${o.orderNumber} (+${getPrepStatus(o).overdueMinutes}m)`).join(', ')}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  soundService.unlockAudio();
+                  soundService.playOverdueOrderAlarm();
+                }}
+                className="px-2.5 py-1.5 rounded-xl border border-red-500/40 bg-red-900/40 text-red-200 hover:bg-red-800/50 hover:text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title="Test kitchen overdue buzzer sound"
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Test Buzzer</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsOverdueAudioMuted((prev) => !prev)}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+                  isOverdueAudioMuted
+                    ? 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-700'
+                    : 'bg-red-500/20 border-red-500/50 text-red-300 hover:bg-red-500/30'
+                }`}
+                title={isOverdueAudioMuted ? 'Turn Overdue Audio Alert ON' : 'Mute Overdue Audio Alert'}
+              >
+                {isOverdueAudioMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 animate-pulse" />}
+                <span>{isOverdueAudioMuted ? 'Alarm Muted' : 'Alarm Active'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('overdue')}
+                className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-black transition flex items-center gap-1.5 shadow-lg active:scale-95 cursor-pointer"
+              >
+                <span>Expedite ({overdueOrders.length})</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Horizontal Status Tabs (Only in Active mode) */}
         {viewMode === 'active' && (
           <div className="flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-[#23304A]/60 pt-1 pb-2">
@@ -400,6 +526,8 @@ export const OrdersScreen: React.FC = () => {
             {displayedOrders.map((order) => {
               const isSelected = selectedOrderIds.has(order.id);
               const isMarkable = order.status !== 'ready' && ['pending', 'accepted', 'preparing'].includes(order.status);
+              const prep = getPrepStatus(order);
+              const isUnfinished = ['pending', 'accepted', 'preparing'].includes(order.status);
 
               return (
                 <div
@@ -409,12 +537,14 @@ export const OrdersScreen: React.FC = () => {
                       toggleSelectOrder(order.id);
                     }
                   }}
-                  className={`bg-[#131B2E] border rounded-[18px] p-4 shadow-sm transition ${
+                  className={`border rounded-[18px] p-4 shadow-sm transition-all duration-200 ${
                     isBulkSelectMode && isMarkable ? 'cursor-pointer hover:border-slate-500' : ''
                   } ${
-                    isSelected
+                    prep.isOverdue
+                      ? 'border-red-500/80 ring-2 ring-red-500/40 bg-gradient-to-b from-[#1C101A] to-[#131B2E] shadow-xl shadow-red-950/30'
+                      : isSelected
                       ? 'border-orange-500 ring-2 ring-orange-500/30 bg-[#162035]'
-                      : 'border-[#23304A]'
+                      : 'bg-[#131B2E] border-[#23304A]'
                   }`}
                 >
                   {/* Header: Order #, Customer & Status */}
@@ -444,7 +574,7 @@ export const OrdersScreen: React.FC = () => {
                       )}
 
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[15px] font-black text-white">
                             {order.orderNumber}
                           </span>
@@ -463,6 +593,14 @@ export const OrdersScreen: React.FC = () => {
                           >
                             {order.status}
                           </span>
+
+                          {/* Overdue Badge */}
+                          {prep.isOverdue && (
+                            <span className="text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/50 flex items-center gap-1 animate-pulse">
+                              <AlertTriangle className="w-2.5 h-2.5 text-red-400" />
+                              +{prep.overdueMinutes}m LATE
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-[#94A3B8] font-medium mt-0.5">
                           {order.customerName} &bull; {order.customerPhone}
@@ -475,6 +613,51 @@ export const OrdersScreen: React.FC = () => {
                       <p className="text-[10px] text-[#94A3B8] font-medium">{order.paymentMethod}</p>
                     </div>
                   </div>
+
+                  {/* KDS Preparation Timer & Overdue Visual Alert Pill */}
+                  {isUnfinished && (
+                    <div className="mb-2.5">
+                      {prep.isOverdue ? (
+                        <div className="p-2 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 shadow-inner">
+                          <div className="flex items-center justify-between text-xs font-black mb-1">
+                            <span className="flex items-center gap-1 text-red-400">
+                              <AlertTriangle className="w-3.5 h-3.5 animate-bounce shrink-0" />
+                              <span>+{prep.overdueMinutes}m OVERDUE</span>
+                            </span>
+                            <span className="text-[11px] font-bold text-red-200 tabular-nums">
+                              {prep.elapsedMinutes}m elapsed / {prep.targetMinutes}m est
+                            </span>
+                          </div>
+                          <div className="w-full bg-red-950 rounded-full h-1.5 overflow-hidden">
+                            <div className="bg-red-500 h-full rounded-full animate-pulse" style={{ width: '100%' }} />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-2 rounded-xl bg-[#0B0F19] border border-[#23304A] text-slate-300">
+                          <div className="flex items-center justify-between text-[11px] font-semibold mb-1">
+                            <span className="flex items-center gap-1.5 text-slate-400">
+                              <Timer className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                              <span>Prep Time</span>
+                            </span>
+                            <span className="tabular-nums">
+                              {prep.elapsedMinutes}m / {prep.targetMinutes}m{' '}
+                              <span className={prep.progressPercent >= 80 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
+                                ({prep.remainingMinutes}m left)
+                              </span>
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                prep.progressPercent >= 80 ? 'bg-amber-500' : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(8, prep.progressPercent))}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Items List */}
                   <div className="bg-[#0B0F19] rounded-[12px] p-2.5 space-y-1 mb-3">
@@ -497,7 +680,7 @@ export const OrdersScreen: React.FC = () => {
                             e.stopPropagation();
                             updateOrderStatus(order.id, 'accepted');
                           }}
-                          className="flex-1 py-2 rounded-xl bg-[#F97316] hover:bg-[#EA580C] text-white text-xs font-bold transition"
+                          className="flex-1 py-2 rounded-xl bg-[#F97316] hover:bg-[#EA580C] text-white text-xs font-bold transition cursor-pointer"
                         >
                           Accept Order
                         </button>
@@ -506,7 +689,7 @@ export const OrdersScreen: React.FC = () => {
                             e.stopPropagation();
                             updateOrderStatus(order.id, 'cancelled', 'Busy');
                           }}
-                          className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold transition"
+                          className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold transition cursor-pointer"
                         >
                           Reject
                         </button>
@@ -519,9 +702,13 @@ export const OrdersScreen: React.FC = () => {
                           e.stopPropagation();
                           updateOrderStatus(order.id, 'preparing');
                         }}
-                        className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition"
+                        className={`w-full py-2 rounded-xl text-white text-xs font-bold transition cursor-pointer ${
+                          prep.isOverdue
+                            ? 'bg-red-600 hover:bg-red-500 shadow-lg shadow-red-950/40 animate-pulse'
+                            : 'bg-blue-600 hover:bg-blue-500'
+                        }`}
                       >
-                        Start Cooking
+                        {prep.isOverdue ? '⚠️ Overdue - Start Cooking Now!' : 'Start Cooking'}
                       </button>
                     )}
 
@@ -531,9 +718,20 @@ export const OrdersScreen: React.FC = () => {
                           e.stopPropagation();
                           updateOrderStatus(order.id, 'ready');
                         }}
-                        className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition"
+                        className={`w-full py-2 rounded-xl text-white text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                          prep.isOverdue
+                            ? 'bg-gradient-to-r from-red-600 via-orange-600 to-emerald-600 hover:brightness-110 shadow-lg shadow-red-950/40'
+                            : 'bg-emerald-600 hover:bg-emerald-500'
+                        }`}
                       >
-                        Mark as Ready
+                        {prep.isOverdue ? (
+                          <>
+                            <Flame className="w-3.5 h-3.5" />
+                            <span>Expedite & Mark Ready</span>
+                          </>
+                        ) : (
+                          <span>Mark as Ready</span>
+                        )}
                       </button>
                     )}
 
@@ -543,7 +741,7 @@ export const OrdersScreen: React.FC = () => {
                           e.stopPropagation();
                           updateOrderStatus(order.id, 'completed');
                         }}
-                        className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition"
+                        className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer"
                       >
                         Handover & Complete
                       </button>
@@ -554,7 +752,7 @@ export const OrdersScreen: React.FC = () => {
                         e.stopPropagation();
                         setSelectedOrderId(order.id);
                       }}
-                      className="p-2 rounded-xl bg-[#0B0F19] text-[#94A3B8] hover:text-white"
+                      className="p-2 rounded-xl bg-[#0B0F19] text-[#94A3B8] hover:text-white cursor-pointer"
                       title="View details"
                     >
                       <ChevronRight className="w-4 h-4" />

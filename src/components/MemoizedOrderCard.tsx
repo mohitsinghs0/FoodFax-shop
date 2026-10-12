@@ -49,10 +49,19 @@ export const MemoizedOrderCard = memo<MemoizedOrderCardProps>(
     const isCompleted = order.status === 'completed';
     const isCancelled = order.status === 'cancelled';
 
+    const isUnfinished = isPending || isAccepted || isPreparing;
+    const createdAtMs = new Date(order.createdAt).getTime();
+    const elapsedMinutes = Math.max(0, Math.floor((Date.now() - (isNaN(createdAtMs) ? Date.now() : createdAtMs)) / 60000));
+    const targetMinutes = Math.max(5, (order.estimatedPrepMinutes || 15) + (isRushMode ? 15 : 0));
+    const isOverdue = isUnfinished && elapsedMinutes > targetMinutes;
+    const overdueMinutes = isOverdue ? elapsedMinutes - targetMinutes : 0;
+
     return (
       <div
         className={`rounded-2xl border p-4 transition-all duration-200 ${
-          isPending
+          isOverdue
+            ? 'bg-gradient-to-b from-[#1C101A] to-[#131B2E] border-red-500/80 ring-2 ring-red-500/40 shadow-xl shadow-red-950/30'
+            : isPending
             ? 'bg-orange-950/20 border-orange-500/40 shadow-lg shadow-orange-950/20 animate-pulse-border'
             : isPreparing
             ? 'bg-blue-950/20 border-blue-500/30'
@@ -68,7 +77,9 @@ export const MemoizedOrderCard = memo<MemoizedOrderCardProps>(
           <div className="flex items-center gap-2.5">
             <span
               className={`px-2.5 py-1 rounded-xl text-xs font-black tracking-wider uppercase ${
-                isPending
+                isOverdue
+                  ? 'bg-red-500 text-white animate-bounce'
+                  : isPending
                   ? 'bg-orange-500 text-white animate-bounce'
                   : isPreparing
                   ? 'bg-blue-500 text-white'

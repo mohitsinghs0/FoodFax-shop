@@ -10,11 +10,14 @@ import {
   User, 
   Table, 
   Receipt,
-  Check
+  Check,
+  Timer,
+  AlertTriangle,
+  Flame
 } from 'lucide-react';
 
 export const OrderDetailsModal: React.FC = () => {
-  const { selectedOrderId, setSelectedOrderId, orders, updateOrderStatus } = useOwnerApp();
+  const { selectedOrderId, setSelectedOrderId, orders, updateOrderStatus, shop } = useOwnerApp();
   const [showKot, setShowKot] = useState(false);
   const [printerSent, setPrinterSent] = useState(false);
 
@@ -24,6 +27,14 @@ export const OrderDetailsModal: React.FC = () => {
   if (!order) return null;
 
   const items = order.items || [];
+
+  const isUnfinished = ['pending', 'accepted', 'preparing'].includes(order.status);
+  const createdAtMs = new Date(order.createdAt).getTime();
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - (isNaN(createdAtMs) ? Date.now() : createdAtMs)) / 60000));
+  const targetMinutes = Math.max(5, (order.estimatedPrepMinutes || 15) + (shop?.isRushMode ? (shop?.rushExtraMinutes || 15) : 0));
+  const isOverdue = isUnfinished && elapsedMinutes > targetMinutes;
+  const overdueMinutes = isOverdue ? elapsedMinutes - targetMinutes : 0;
+  const remainingMinutes = Math.max(0, targetMinutes - elapsedMinutes);
 
   const stages = [
     { key: 'pending', label: 'Pending' },
@@ -115,6 +126,55 @@ export const OrderDetailsModal: React.FC = () => {
           </div>
         ) : (
           <div className="p-5 space-y-5">
+            {/* KDS Kitchen Preparation Timing & Overdue Alert */}
+            {isUnfinished && (
+              <div
+                className={`p-3.5 rounded-2xl border ${
+                  isOverdue
+                    ? 'bg-red-950/40 border-red-500/60 shadow-lg shadow-red-950/30 text-red-200'
+                    : 'bg-slate-950 border-slate-800 text-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between text-xs font-bold mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    {isOverdue ? (
+                      <>
+                        <AlertTriangle className="w-4 h-4 text-red-400 animate-bounce" />
+                        <span className="text-red-400 font-black uppercase tracking-wide">
+                          +{overdueMinutes}m Kitchen Prep Overdue
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Timer className="w-4 h-4 text-orange-400" />
+                        <span>Kitchen Preparation Target</span>
+                      </>
+                    )}
+                  </span>
+                  <span className="tabular-nums font-semibold">
+                    {elapsedMinutes}m elapsed / {targetMinutes}m est{' '}
+                    {!isOverdue && (
+                      <span className="text-emerald-400">({remainingMinutes}m left)</span>
+                    )}
+                  </span>
+                </div>
+                <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      isOverdue
+                        ? 'bg-red-500 animate-pulse w-full'
+                        : elapsedMinutes / targetMinutes >= 0.8
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                    }`}
+                    style={{
+                      width: isOverdue ? '100%' : `${Math.min(100, Math.max(10, Math.round((elapsedMinutes / targetMinutes) * 100)))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Status Timeline Stepper */}
             <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
               <div className="flex items-center justify-between">

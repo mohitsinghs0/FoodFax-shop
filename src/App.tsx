@@ -13,6 +13,8 @@ import { ScreenSkeletonFallback } from './components/ScreenSkeletonFallback';
 import { MenuItem, ActiveScreen } from './types';
 import { Zap } from 'lucide-react';
 import { SessionExpiringModal } from './components/SessionExpiringModal';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 // LAZY LOADED ROUTE CHUNKS FOR SIGNIFICANT INITIAL BUNDLE REDUCTION
 const SplashScreen = lazy(() => import('./screens/SplashScreen').then(m => ({ default: m.SplashScreen })));
@@ -186,6 +188,8 @@ export default function App() {
   return (
     <OwnerAppProvider>
       <MainAppContent />
+      <Analytics />
+      <SpeedInsights />
     </OwnerAppProvider>
   );
 }

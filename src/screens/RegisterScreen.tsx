@@ -70,11 +70,15 @@ export const RegisterScreen: React.FC = () => {
       return;
     }
 
-    await registerWithPhone({
+    const res = await registerWithPhone({
       phone: fullPhone,
       password,
       fullName: fullName.trim(),
     });
+
+    if (res && typeof res === 'object' && !res.success) {
+      setGeneralError(res.error || 'Failed to register. Please check your details.');
+    }
   };
 
   return (

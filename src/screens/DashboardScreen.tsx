@@ -343,27 +343,44 @@ export const DashboardScreen: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {orders.slice(0, 4).map((order) => (
-                    <div
-                      key={order.id}
-                      onClick={() => setSelectedOrderId(order.id)}
-                      className="bg-[#131B2E] border border-[#1E293B] hover:border-[#F97316]/50 rounded-[16px] p-3 cursor-pointer transition flex items-center justify-between gap-2 active:scale-98"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-white">{order.orderNumber}</span>
-                          <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-[#F97316]/15 text-[#F97316] shrink-0">
-                            {order.status.toUpperCase()}
-                          </span>
+                  {orders.slice(0, 4).map((order) => {
+                    const isUnfinished = ['pending', 'accepted', 'preparing'].includes(order.status);
+                    const createdAtMs = new Date(order.createdAt).getTime();
+                    const elapsedMin = Math.max(0, Math.floor((Date.now() - (isNaN(createdAtMs) ? Date.now() : createdAtMs)) / 60000));
+                    const targetMin = (order.estimatedPrepMinutes || 15) + (shop?.isRushMode ? (shop?.rushExtraMinutes || 15) : 0);
+                    const isOverdue = isUnfinished && elapsedMin > targetMin;
+
+                    return (
+                      <div
+                        key={order.id}
+                        onClick={() => setSelectedOrderId(order.id)}
+                        className={`rounded-[16px] p-3 cursor-pointer transition flex items-center justify-between gap-2 active:scale-98 border ${
+                          isOverdue
+                            ? 'bg-red-950/25 border-red-500/60 hover:border-red-400'
+                            : 'bg-[#131B2E] border-[#1E293B] hover:border-[#F97316]/50'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-black text-white">{order.orderNumber}</span>
+                            <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-[#F97316]/15 text-[#F97316] shrink-0">
+                              {order.status.toUpperCase()}
+                            </span>
+                            {isOverdue && (
+                              <span className="text-[8px] px-1.5 py-0.5 rounded-full font-black bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse shrink-0">
+                                +{elapsedMin - targetMin}m LATE
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-[#94A3B8] mt-0.5 truncate">{order.customerName || 'Walk-in Customer'}</p>
                         </div>
-                        <p className="text-[11px] text-[#94A3B8] mt-0.5 truncate">{order.customerName || 'Walk-in Customer'}</p>
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-black text-white tabular-nums">₹{order.totalAmount}</p>
+                          <p className="text-[10px] text-[#64748B]">{order.items.length} items</p>
+                        </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-black text-white tabular-nums">₹{order.totalAmount}</p>
-                        <p className="text-[10px] text-[#64748B]">{order.items.length} items</p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

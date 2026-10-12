@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
 import { ShopLocationPickerModal } from '../components/ShopLocationPickerModal';
 import { soundService } from '../services/soundService';
+import { storageService } from '../services/storageService';
 import { 
   Store, 
   MapPin, 
@@ -120,7 +121,7 @@ export const ShopSetupScreen: React.FC = () => {
   ];
 
   // Storefront Photo Upload
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -133,12 +134,25 @@ export const ShopSetupScreen: React.FC = () => {
     setFormError(null);
     setMissingFieldId(null);
 
+    // Try Supabase Storage 'shop-assets' bucket first to eliminate DB egress bloat
+    try {
+      const shopIdentifier = shop?.id || ownerProfile?.id || 'shop_' + Math.random().toString(36).substring(2, 8);
+      const res = await storageService.uploadShopAsset(file, shopIdentifier, 'logo');
+      if (res.isStorageUrl && res.url) {
+        setPhotoUrl(res.url);
+        setIsUploadingPhoto(false);
+        soundService.playSuccessTone();
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback: compact compression (max 800px, 0.70 quality) to protect bandwidth
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const maxDim = 1200;
+        const maxDim = 800;
         let { width, height } = img;
         if (width > height) {
           if (width > maxDim) {
@@ -156,7 +170,7 @@ export const ShopSetupScreen: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          setPhotoUrl(canvas.toDataURL('image/jpeg', 0.85));
+          setPhotoUrl(canvas.toDataURL('image/jpeg', 0.70));
         } else {
           setPhotoUrl(event.target?.result as string);
         }
@@ -177,12 +191,13 @@ export const ShopSetupScreen: React.FC = () => {
   };
 
   // Normal file processor for documents (PDF & Images)
-  const handleDocUpload = (
+  const handleDocUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     setUrl: (url: string) => void,
     setName: (name: string) => void,
     setUploading: (loading: boolean) => void,
-    fieldId: string
+    fieldId: string,
+    docType: string = 'kyc_doc'
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -196,6 +211,20 @@ export const ShopSetupScreen: React.FC = () => {
     setFormError(null);
     setMissingFieldId(null);
 
+    // 1. First attempt to upload to Supabase Storage CDN (Zero DB storage, Zero egress bloat)
+    try {
+      const shopIdentifier = shop?.id || ownerProfile?.id || 'shop_' + Math.random().toString(36).substring(2, 8);
+      const storageRes = await storageService.uploadKycDoc(file, shopIdentifier, docType);
+      if (storageRes.isStorageUrl && storageRes.url) {
+        setUrl(storageRes.url);
+        setName(file.name);
+        setUploading(false);
+        soundService.playSuccessTone();
+        return;
+      }
+    } catch (_) {}
+
+    // 2. Safe Fallback: Compress image to compact dimensions so base64 string is minimal
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
@@ -203,7 +232,7 @@ export const ShopSetupScreen: React.FC = () => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const maxDim = 1400;
+          const maxDim = 800; // compact dimension to prevent excessive egress
           let { width, height } = img;
           if (width > height) {
             if (width > maxDim) {
@@ -221,7 +250,7 @@ export const ShopSetupScreen: React.FC = () => {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            setUrl(canvas.toDataURL('image/jpeg', 0.85));
+            setUrl(canvas.toDataURL('image/jpeg', 0.65)); // 65% quality ~40-60KB
           } else {
             setUrl(dataUrl);
           }
@@ -1271,7 +1300,7 @@ export const ShopSetupScreen: React.FC = () => {
               type="file"
               accept="image/*,application/pdf"
               className="hidden"
-              onChange={(e) => handleDocUpload(e, setFssaiDocUrl, setFssaiDocName, setIsUploadingFssai, 'field-fssaiDoc')}
+              onChange={(e) => handleDocUpload(e, setFssaiDocUrl, setFssaiDocName, setIsUploadingFssai, 'field-fssaiDoc', 'fssai')}
             />
 
             <div id="field-fssaiDoc">
@@ -1390,7 +1419,7 @@ export const ShopSetupScreen: React.FC = () => {
               type="file"
               accept="image/*,application/pdf"
               className="hidden"
-              onChange={(e) => handleDocUpload(e, setOwnerIdDocUrl, setOwnerIdDocName, setIsUploadingOwnerId, 'field-ownerIdDoc')}
+              onChange={(e) => handleDocUpload(e, setOwnerIdDocUrl, setOwnerIdDocName, setIsUploadingOwnerId, 'field-ownerIdDoc', 'owner_id')}
             />
 
             <div id="field-ownerIdDoc">
@@ -1474,7 +1503,7 @@ export const ShopSetupScreen: React.FC = () => {
               type="file"
               accept="image/*,application/pdf"
               className="hidden"
-              onChange={(e) => handleDocUpload(e, setAddressProofDocUrl, setAddressProofDocName, setIsUploadingAddressProof, 'field-addressProofDoc')}
+              onChange={(e) => handleDocUpload(e, setAddressProofDocUrl, setAddressProofDocName, setIsUploadingAddressProof, 'field-addressProofDoc', 'address_proof')}
             />
 
             <div id="field-addressProofDoc">
@@ -1589,7 +1618,7 @@ export const ShopSetupScreen: React.FC = () => {
               type="file"
               accept="image/*,application/pdf"
               className="hidden"
-              onChange={(e) => handleDocUpload(e, setTradePermitDocUrl, setTradePermitDocName, setIsUploadingTradePermit, 'field-tradePermitDoc')}
+              onChange={(e) => handleDocUpload(e, setTradePermitDocUrl, setTradePermitDocName, setIsUploadingTradePermit, 'field-tradePermitDoc', 'trade_permit')}
             />
 
             <div id="field-tradePermitDoc">
