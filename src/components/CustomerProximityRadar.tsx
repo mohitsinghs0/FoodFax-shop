@@ -73,7 +73,7 @@ export const CustomerProximityRadar: React.FC<CustomerProximityRadarProps> = ({
     const baseShopLat = shop.latitude || 19.0760;
     const baseShopLon = shop.longitude || 72.8777;
 
-    // If active orders exist in system, map them; otherwise provide sample active tracking entries
+    // Map active orders from database; return empty if no real active orders exist
     if (activeTakeawayOrDineIn.length > 0) {
       return activeTakeawayOrDineIn.slice(0, 4).map((o, idx) => {
         // Calculate animated/live customer distance
@@ -104,51 +104,7 @@ export const CustomerProximityRadar: React.FC<CustomerProximityRadarProps> = ({
       });
     }
 
-    // High-fidelity active live demonstration items
-    const demoItems: CustomerTrackerItem[] = [
-      {
-        id: 'track_1',
-        orderNumber: '#OD-2841',
-        customerName: 'Aman Sharma',
-        customerPhone: '+91 93214 44297',
-        orderType: 'takeaway',
-        distanceMeters: Math.max(45, 320 - (simulationTick * 30)),
-        etaMinutes: Math.max(1, Math.round(Math.max(45, 320 - (simulationTick * 30)) / 75)),
-        travelMode: 'walk',
-        status: (320 - simulationTick * 30) <= 80 ? 'arrived' : 'approaching',
-        totalAmount: 240,
-        itemsCount: 2,
-      },
-      {
-        id: 'track_2',
-        orderNumber: '#OD-2844',
-        customerName: 'Priya Iyer',
-        customerPhone: '+91 98201 55612',
-        orderType: 'dine_in',
-        tableNumber: 'Table 4',
-        distanceMeters: Math.max(60, 850 - (simulationTick * 25)),
-        etaMinutes: Math.max(2, Math.round(Math.max(60, 850 - (simulationTick * 25)) / 250)),
-        travelMode: 'vehicle',
-        status: (850 - simulationTick * 25) <= 450 ? 'approaching' : 'in_transit',
-        totalAmount: 480,
-        itemsCount: 3,
-      },
-      {
-        id: 'track_3',
-        orderNumber: '#OD-2847',
-        customerName: 'Vikram Malhotra',
-        customerPhone: '+91 97690 12345',
-        orderType: 'takeaway',
-        distanceMeters: 60,
-        etaMinutes: 1,
-        travelMode: 'walk',
-        status: 'arrived',
-        totalAmount: 180,
-        itemsCount: 1,
-      }
-    ];
-
-    return demoItems;
+    return [];
   }, [orders, shop.latitude, shop.longitude, simulationTick]);
 
   // Periodic simulated live GPS update (simulates customer walking towards stall)

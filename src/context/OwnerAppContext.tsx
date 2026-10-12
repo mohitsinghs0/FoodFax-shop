@@ -158,63 +158,6 @@ function phoneToInternalEmail(phone: string): string {
   return `owner.${digits}@foodfax.in`;
 }
 
-// Known pre-existing database owners (resilient fallback if Supabase cloud project has exceeded egress quota)
-export const KNOWN_DATABASE_OWNERS: Record<string, { fullName: string; shopName: string; shopId: string; address?: string; phone: string }> = {
-  '9321444297': {
-    fullName: 'vikram',
-    shopName: 'vikrant missal',
-    shopId: 'shop_09o4zbmv',
-    address: 'Naigaon East Vasai Link Road, Vasai-Virar',
-    phone: '+919321444297',
-  },
-  '8652872732': {
-    fullName: 'Mohit Singh',
-    shopName: 'Motu chai wala',
-    shopId: 'shop_k9unptvb',
-    address: 'L-2 Room No 7 B M C Colony Vasant Dindoshi Film City RD',
-    phone: '+918652872732',
-  },
-  '9321444296': {
-    fullName: 'Restaurant Owner',
-    shopName: 'Meena bajar',
-    shopId: 'shop_0vn16c2t',
-    address: 'naigaon east',
-    phone: '+919321444296',
-  },
-};
-
-// Helper to construct a typed Shop object for known owners or fallback offline use
-function createFallbackShopObject(params: {
-  id: string;
-  ownerId: string;
-  name: string;
-  phone?: string;
-  address?: string;
-  shopType?: string;
-  isActive?: boolean;
-}): Shop {
-  return {
-    id: params.id,
-    ownerId: params.ownerId,
-    name: params.name,
-    slug: params.name ? params.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : undefined,
-    shopType: params.shopType || 'Fast Food & QSR',
-    phone: params.phone,
-    address: params.address || 'Local Stall Location',
-    isOpen: true,
-    isRushMode: false,
-    rushExtraMinutes: 15,
-    minimumOrder: 0,
-    acceptsTakeaway: true,
-    acceptsDineIn: true,
-    acceptsDelivery: false,
-    is_active: params.isActive !== false,
-    kycStatus: 'approved',
-    kyc_status: 'approved',
-    isVerified: true,
-  };
-}
-
 // Local cache for offline persistence / resilient authentication
 function getLocalUsers(): Record<string, { password: string; fullName: string; id: string }> {
   try {
@@ -577,25 +520,9 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       // 2. Fetch Shops belonging to this authenticated owner (or matching owner's phone/id)
       const digits = (userData?.phone || userId || '').replace(/\D/g, '');
       const last10 = digits.slice(-10);
-      const knownOwner = KNOWN_DATABASE_OWNERS[last10];
-      const ownerPhone = userData?.phone || (knownOwner ? knownOwner.phone : '');
+      const ownerPhone = userData?.phone || '';
 
-      if (!userData && knownOwner) {
-        const fallbackProfile: OwnerProfile = {
-          id: userId,
-          email: `owner.${last10}@foodfax.in`,
-          fullName: knownOwner.fullName,
-          phone: knownOwner.phone,
-          role: 'owner',
-          dashboardLayout: DEFAULT_DASHBOARD_PREFERENCES,
-        };
-        setOwnerProfile(fallbackProfile);
-        try {
-          localStorage.setItem('foodfax_owner_profile', JSON.stringify(fallbackProfile));
-        } catch (_) {}
-      }
-
-      // Query only the authenticated user's shop(s)
+      // Query only the authenticated user's shop(s) directly from Supabase
       let shopsQuery = client.from('shops').select('*');
       if (last10) {
         shopsQuery = shopsQuery.or(`owner_id.eq.${userId},phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`);
@@ -606,10 +533,15 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       let ownerShopsData: any[] | null = null;
       try {
         const res = await shopsQuery.order('created_at', { ascending: false });
+        if (res.error) {
+          console.error('[loadDatabaseData] Supabase shops query error:', res.error);
+        }
         ownerShopsData = res.data;
-      } catch (_) {}
+      } catch (err) {
+        console.error('[loadDatabaseData] Exception querying shops:', err);
+      }
 
-      // Fallback: If no shop assigned yet to this newly registered owner, check if an existing shop is owned by their ID
+      // If no shop returned, check if any shop has owner_id matching userId
       let targetShopsList = ownerShopsData || [];
       if (targetShopsList.length === 0) {
         try {
@@ -622,20 +554,6 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             targetShopsList = fallbackShop;
           }
         } catch (_) {}
-      }
-
-      if (targetShopsList.length === 0 && knownOwner) {
-        targetShopsList = [{
-          id: knownOwner.shopId,
-          owner_id: userId,
-          name: knownOwner.shopName,
-          phone: knownOwner.phone,
-          address: knownOwner.address,
-          stall_type: 'Restaurant',
-          is_active: true,
-          kyc_status: 'approved',
-          is_open: true,
-        }];
       }
 
       const mappedAllShops: Shop[] = targetShopsList.map((s: any) => ({
@@ -869,39 +787,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
         return targetShop;
       } else {
-        // Fallback 1: Check known database owners
-        if (knownOwner) {
-          const fallbackShop = createFallbackShopObject({
-            id: knownOwner.shopId,
-            ownerId: userId,
-            name: knownOwner.shopName,
-            phone: knownOwner.phone,
-            address: knownOwner.address,
-            shopType: 'Restaurant',
-          });
-          setShop(fallbackShop);
-          try {
-            localStorage.setItem('foodfax_owner_shop', JSON.stringify(fallbackShop));
-          } catch (_) {}
-          setActiveScreen((prev) => (prev === 'splash' || prev === 'login' ? 'dashboard' : prev));
-          return fallbackShop;
-        }
-
-        // Fallback 2: Check local storage for previously saved shop
-        const localSavedRaw = localStorage.getItem('foodfax_owner_shop');
-        if (localSavedRaw) {
-          try {
-            const parsed = JSON.parse(localSavedRaw);
-            if (parsed && parsed.name) {
-              setShop(parsed);
-              const isApproved = Boolean(parsed.is_active === true || parsed.kyc_status === 'approved' || parsed.kycStatus === 'approved');
-              setActiveScreen((prev) => (prev === 'splash' || prev === 'login' ? (isApproved ? 'dashboard' : 'kyc_status') : prev));
-              return parsed;
-            }
-          } catch (_) {}
-        }
-
-        // Shop not created yet
+        // Target shop does NOT exist in Supabase database (or was deleted by admin/owner)
+        console.log('[loadDatabaseData] No shop found in Supabase for user', userId, '- clearing local shop state.');
         setShop(null);
         localStorage.removeItem('foodfax_owner_shop');
         setOrders([]);
@@ -912,37 +799,6 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
     } catch (err) {
       console.warn('Error loading Supabase database data:', err);
-      const digits = (userId || '').replace(/\D/g, '');
-      const last10 = digits.slice(-10);
-      const knownOwner = KNOWN_DATABASE_OWNERS[last10];
-      if (knownOwner) {
-        const fallbackShop = createFallbackShopObject({
-          id: knownOwner.shopId,
-          ownerId: userId,
-          name: knownOwner.shopName,
-          phone: knownOwner.phone,
-          address: knownOwner.address,
-          shopType: 'Restaurant',
-        });
-        setShop(fallbackShop);
-        try {
-          localStorage.setItem('foodfax_owner_shop', JSON.stringify(fallbackShop));
-        } catch (_) {}
-        setActiveScreen((prev) => (prev === 'splash' || prev === 'login' ? 'dashboard' : prev));
-        return fallbackShop;
-      }
-      const localSavedRaw = localStorage.getItem('foodfax_owner_shop');
-      if (localSavedRaw) {
-        try {
-          const parsed = JSON.parse(localSavedRaw);
-          if (parsed && parsed.name) {
-            setShop(parsed);
-            const isApproved = Boolean(parsed.is_active === true || parsed.kyc_status === 'approved' || parsed.kycStatus === 'approved');
-            setActiveScreen((prev) => (prev === 'splash' || prev === 'login' ? (isApproved ? 'dashboard' : 'kyc_status') : prev));
-            return parsed;
-          }
-        } catch (_) {}
-      }
       return null;
     }
   }, []);
@@ -1256,9 +1112,6 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const localUsers = getLocalUsers();
     let localUser = localUsers[last10] || localUsers[standardPhone] || localUsers[cleanPhone];
 
-    // Check pre-existing known database owners as resilient fallback
-    const knownOwner = KNOWN_DATABASE_OWNERS[last10];
-
     // Find if user exists in database
     let foundUser: any = null;
     let foundShop: any = null;
@@ -1311,56 +1164,46 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
     }
 
-    // Resilient fallback for known database owners when Supabase cloud API is blocked / quota exceeded
-    if (!foundUser && !foundShop && knownOwner) {
-      foundUser = {
-        id: 'owner_' + last10,
-        full_name: knownOwner.fullName,
-        phone: standardPhone,
-        email: `owner.${last10}@foodfax.in`,
-      };
-      foundShop = {
-        id: knownOwner.shopId,
-        owner_id: 'owner_' + last10,
-        name: knownOwner.shopName,
-        phone: standardPhone,
-        address: knownOwner.address,
-        is_active: true,
-        kyc_status: 'approved',
-      };
+    if (isQuotaRestricted) {
+      const quotaErr = 'Database Service Restricted: Supabase egress quota exceeded. Please resolve billing or unfreeze spend caps in your Supabase dashboard.';
+      setErrorMessage(quotaErr);
+      setIsLoading(false);
+      return { success: false, error: quotaErr };
     }
 
-    // If user is NOT registered in database and not in local cache -> REJECT WITH ERROR
-    if (!foundUser && !foundShop && !localUser) {
-      const notFoundErr = isQuotaRestricted
-        ? `Supabase cloud quota limit (exceed_egress_quota) active. Please click 'Register Restaurant' below to set up your account.`
-        : `Mobile number ${cleanPhone} is not registered. Please click 'Register Restaurant' below.`;
+    // User MUST exist in Supabase database
+    if (!foundUser && !foundShop) {
+      const notFoundErr = `Mobile number ${cleanPhone} is not registered in the database. Please click 'Register Restaurant' below.`;
       setErrorMessage(notFoundErr);
       setIsLoading(false);
       return { success: false, error: notFoundErr };
     }
 
-    // Now verify password strictly
+    // Strictly verify password against database record
     let passwordMatches = false;
-    let authenticatedUserId = (foundUser?.id || foundShop?.owner_id || localUser?.id || ('owner_' + last10));
-    let authenticatedUserName = (foundUser?.full_name || foundShop?.name || localUser?.fullName || 'Restaurant Owner');
+    let authenticatedUserId = (foundUser?.id || foundShop?.owner_id || ('owner_' + last10));
+    let authenticatedUserName = (foundUser?.full_name || foundShop?.name || 'Restaurant Owner');
     let authenticatedEmail = (foundUser?.email || phoneToInternalEmail(cleanPhone));
 
-    // Priority 1: Check existing local user credentials
-    if (localUser && localUser.password && localUser.password.trim().length > 0) {
-      if (localUser.password.trim() === pass.trim()) {
-        passwordMatches = true;
-      }
-    }
-    // Priority 2: Check database user password column
-    else if (foundUser && foundUser.password && foundUser.password.trim().length > 0) {
+    if (foundUser && foundUser.password && foundUser.password.trim().length > 0) {
       if (foundUser.password.trim() === pass.trim()) {
         passwordMatches = true;
       }
+    } else if (foundUser && !foundUser.password) {
+      // First-time password set for DB user where password column was NULL
+      passwordMatches = true;
+      if (client && foundUser?.id) {
+        try {
+          client.from('users').update({
+            password: pass,
+            updated_at: new Date().toISOString()
+          }).eq('id', foundUser.id).then(() => {});
+        } catch (_) {}
+      }
     }
 
-    // Priority 3: Check Supabase Auth if online
-    if (!passwordMatches && client && !isQuotaRestricted) {
+    // Supabase Auth signInWithPassword check
+    if (!passwordMatches && client) {
       try {
         const { data: authData, error: authError } = await client.auth.signInWithPassword({
           email: authenticatedEmail,
@@ -1374,26 +1217,6 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       } catch (_) {}
     }
 
-    // Priority 4: First-time login for existing database owner/shop with no prior password set
-    if (!passwordMatches && (foundUser || foundShop) && (!localUser || !localUser.password)) {
-      passwordMatches = true;
-      if (client && !isQuotaRestricted && foundUser?.id) {
-        try {
-          client.from('users').update({
-            password: pass,
-            updated_at: new Date().toISOString()
-          }).eq('id', foundUser.id).then(() => {});
-        } catch (_) {}
-      }
-    }
-
-    // Local user cache verification
-    if (!passwordMatches && localUser && localUser.password && localUser.password.trim() === pass.trim()) {
-      passwordMatches = true;
-      authenticatedUserId = localUser.id || authenticatedUserId;
-      authenticatedUserName = localUser.fullName || authenticatedUserName;
-    }
-
     if (!passwordMatches) {
       const lock = authSecurityService.recordFailedAttempt(cleanPhone);
       const wrongPassErr = lock.isLocked
@@ -1404,14 +1227,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       return { success: false, error: wrongPassErr };
     }
 
-    // Password is VALID! Log user in
+    // Password is VALID! Log user in with real DB profile
     authSecurityService.recordSuccessfulAttempt(cleanPhone);
-    saveLocalUser(standardPhone, {
-      password: pass,
-      fullName: authenticatedUserName,
-      id: authenticatedUserId,
-    });
-
     const profile: OwnerProfile = {
       id: authenticatedUserId,
       email: authenticatedEmail,
@@ -1420,34 +1237,21 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       role: 'owner',
     };
     setOwnerProfile(profile);
+    try {
+      localStorage.setItem('foodfax_owner_profile', JSON.stringify(profile));
+    } catch (_) {}
 
-    // If foundShop exists locally or from known owners, pre-seed local shop storage
-    if (foundShop) {
-      const preparedShop = createFallbackShopObject({
-        id: foundShop.id,
-        ownerId: authenticatedUserId,
-        name: foundShop.name,
-        shopType: foundShop.stall_type || foundShop.shopType || 'Fast Food & QSR',
-        phone: standardPhone,
-        address: foundShop.address || 'Local Stall Location',
-      });
-      try {
-        localStorage.setItem('foodfax_owner_shop', JSON.stringify(preparedShop));
-      } catch (_) {}
-    }
-
+    // Load real shop from database ONLY
     const loadedShop = await loadDatabaseData(authenticatedUserId, foundShop?.id);
     setIsLoading(false);
 
-    // Determine target screen based on shop completion and KYC verification
-    const activeShop = loadedShop || (foundShop ? { name: foundShop.name, is_active: true } : null);
-    if (!activeShop || !activeShop.name?.trim()) {
+    if (!loadedShop || !loadedShop.name?.trim()) {
       setActiveScreenState('shop_setup');
     } else {
       const isApproved = Boolean(
-        activeShop.is_active === true ||
-        (activeShop as any).kyc_status === 'approved' ||
-        (activeShop as any).kycStatus === 'approved'
+        loadedShop.is_active === true ||
+        loadedShop.kyc_status === 'approved' ||
+        loadedShop.kycStatus === 'approved'
       );
       if (isApproved) {
         setActiveScreenState('dashboard');
@@ -1476,19 +1280,24 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       return false;
     }
 
-    // 2. Verify that the mobile number is actually registered in the database or local store
+    // 2. Verify that the mobile number is actually registered in the Supabase database
     const client = getSupabaseClient();
-    const localUsers = getLocalUsers();
-    let isRegistered = Boolean(localUsers[last10]) || Boolean(KNOWN_DATABASE_OWNERS[last10]);
+    let isRegistered = false;
 
-    if (client && !isRegistered) {
+    if (client) {
       try {
-        const { data: dbUser } = await client
+        const { data: dbUser, error: uErr } = await client
           .from('users')
           .select('id')
           .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`)
           .limit(1)
           .maybeSingle();
+
+        if (uErr && (uErr.message.includes('exceed_egress_quota') || (uErr as any).status === 402)) {
+          setErrorMessage('Database Service Restricted: Supabase egress quota exceeded. Please resolve billing in Supabase dashboard.');
+          setIsLoading(false);
+          return false;
+        }
 
         if (dbUser) {
           isRegistered = true;
@@ -1501,11 +1310,17 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             .maybeSingle();
           if (dbShop) isRegistered = true;
         }
-      } catch (_) {}
+      } catch (err: any) {
+        if (err?.message?.includes('exceed_egress_quota') || err?.status === 402) {
+          setErrorMessage('Database Service Restricted: Supabase egress quota exceeded. Please resolve billing in Supabase dashboard.');
+          setIsLoading(false);
+          return false;
+        }
+      }
     }
 
     if (!isRegistered) {
-      setErrorMessage(`Mobile number ${cleanPhone} is not registered yet. Please click 'Register Restaurant' below.`);
+      setErrorMessage(`Mobile number ${cleanPhone} is not registered in the database. Please click 'Register Restaurant' below.`);
       setIsLoading(false);
       return false;
     }
@@ -1560,18 +1375,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     authSecurityService.recordSuccessfulAttempt(cleanPhone);
 
     const client = getSupabaseClient();
-    const localUsers = getLocalUsers();
-    const knownOwner = KNOWN_DATABASE_OWNERS[last10];
     let userId = 'owner_' + (last10 || digits);
     let userName = 'Restaurant Owner';
-
-    if (localUsers[last10]) {
-      userId = localUsers[last10].id || userId;
-      userName = localUsers[last10].fullName || userName;
-    } else if (knownOwner) {
-      userId = 'owner_' + last10;
-      userName = knownOwner.fullName;
-    }
 
     if (client) {
       try {
@@ -1598,12 +1403,6 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       } catch (_) {}
     }
 
-    saveLocalUser(standardPhone, {
-      password: localUsers[last10]?.password || '',
-      fullName: userName,
-      id: userId,
-    });
-
     const profile: OwnerProfile = {
       id: userId,
       phone: standardPhone,
@@ -1615,31 +1414,16 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       localStorage.setItem('foodfax_owner_profile', JSON.stringify(profile));
     } catch (_) {}
 
-    if (knownOwner) {
-      const preparedShop = createFallbackShopObject({
-        id: knownOwner.shopId,
-        ownerId: userId,
-        name: knownOwner.shopName,
-        shopType: 'Restaurant',
-        phone: standardPhone,
-        address: knownOwner.address,
-      });
-      try {
-        localStorage.setItem('foodfax_owner_shop', JSON.stringify(preparedShop));
-      } catch (_) {}
-    }
-
-    const loadedShop = client ? await loadDatabaseData(userId, knownOwner?.shopId) : shop;
+    const loadedShop = client ? await loadDatabaseData(userId) : null;
     setIsLoading(false);
 
-    const activeShop = loadedShop || (knownOwner ? { name: knownOwner.shopName, is_active: true } : null);
-    if (!activeShop || !activeShop.name?.trim()) {
+    if (!loadedShop || !loadedShop.name?.trim()) {
       setActiveScreenState('shop_setup');
     } else {
       const isApproved = Boolean(
-        activeShop.is_active === true ||
-        (activeShop as any).kyc_status === 'approved' ||
-        (activeShop as any).kycStatus === 'approved'
+        loadedShop.is_active === true ||
+        loadedShop.kyc_status === 'approved' ||
+        loadedShop.kycStatus === 'approved'
       );
       if (isApproved) {
         setActiveScreenState('dashboard');
@@ -1671,9 +1455,9 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const internalEmail = phoneToInternalEmail(cleanPhone);
     const ownerFullName = data.fullName.trim() || 'Restaurant Owner';
 
-    // Check local registry or known database owners to prevent duplicate registrations
+    // Check local registry to prevent duplicate registrations
     const localUsers = getLocalUsers();
-    if (localUsers[last10] || KNOWN_DATABASE_OWNERS[last10]) {
+    if (localUsers[last10]) {
       const err = `Mobile number ${standardPhone} is already registered! Please sign in with your password.`;
       setErrorMessage(err);
       setIsLoading(false);
@@ -1825,7 +1609,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     // 2. Verify registered number
     const client = getSupabaseClient();
     const localUsers = getLocalUsers();
-    let isRegistered = Boolean(localUsers[last10]) || Boolean(KNOWN_DATABASE_OWNERS[last10]);
+    let isRegistered = Boolean(localUsers[last10]);
 
     if (client && !isRegistered) {
       try {
@@ -1917,7 +1701,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     } else {
       saveLocalUser(cleanPhone, {
         password: newPass,
-        fullName: KNOWN_DATABASE_OWNERS[last10]?.fullName || 'Restaurant Owner',
+        fullName: 'Restaurant Owner',
         id: 'owner_' + last10,
       });
     }
@@ -2303,17 +2087,35 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
 
         if (shopError) {
-          console.warn('Error saving shop in Supabase:', shopError.message);
-        } else {
-          // Link shop_id in users table
-          await client.from('users').update({ shop_id: newShop.id }).eq('id', ownerProfile.id);
+          console.error('Error saving shop in Supabase:', shopError.message);
+          let userMsg = `Database Error: ${shopError.message}`;
+          if (shopError.message?.includes('exceed_egress_quota') || (shopError as any).status === 402) {
+            userMsg = 'Database Service Restricted: Supabase egress quota exceeded. Please resolve billing issues or unfreeze spend caps in your Supabase dashboard.';
+          }
+          setErrorMessage(userMsg);
+          setIsLoading(false);
+          return false;
         }
+
+        // Link shop_id in users table
+        await client.from('users').update({ shop_id: newShop.id }).eq('id', ownerProfile.id);
 
         // Sync submitted KYC documents to Supabase kyc_documents table & metadata
         await syncKycDocumentsToSupabase(client, newShop);
-      } catch (e) {
-        console.warn('Supabase shop save exception:', e);
+      } catch (e: any) {
+        console.error('Supabase shop save exception:', e);
+        const msg = e?.message?.includes('exceed_egress_quota') || e?.status === 402
+          ? 'Database Service Restricted: Supabase egress quota exceeded. Please resolve billing issues or unfreeze spend caps in your Supabase dashboard.'
+          : (e?.message || 'Database error while saving shop.');
+        setErrorMessage(msg);
+        setIsLoading(false);
+        return false;
       }
+    } else if (!client) {
+      const err = 'Database client not connected. Please check your Supabase configuration.';
+      setErrorMessage(err);
+      setIsLoading(false);
+      return false;
     }
 
     if (ownerProfile) {

@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 
 export const ShopSetupScreen: React.FC = () => {
-  const { ownerProfile, saveShop, isLoading, setActiveScreen, shop } = useOwnerApp();
+  const { ownerProfile, saveShop, isLoading, setActiveScreen, shop, errorMessage } = useOwnerApp();
 
   // 2-Part Form Navigation: Part 1 (Shop Details) & Part 2 (Document Verification)
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
@@ -590,6 +590,9 @@ export const ShopSetupScreen: React.FC = () => {
     if (success) {
       soundService.playSuccessTone();
       setActiveScreen('kyc_status');
+    } else {
+      setShowAlertModal(true);
+      setFormError(errorMessage || 'Failed to save restaurant details to the database. Please verify your Supabase database connection and service quota.');
     }
   };
 
@@ -663,12 +666,16 @@ export const ShopSetupScreen: React.FC = () => {
             <div className="w-11 h-11 rounded-xl bg-red-500/15 text-red-400 flex items-center justify-center mb-3 mx-auto">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <h3 className="text-sm font-bold text-white text-center">Missing Required Detail</h3>
+            <h3 className="text-sm font-bold text-white text-center">
+              {missingFieldId ? 'Missing Required Detail' : 'Database Submission Error'}
+            </h3>
             <p className="text-xs text-red-300 text-center mt-1.5 leading-relaxed bg-red-500/10 p-2.5 rounded-xl border border-red-500/20">
               {formError}
             </p>
             <p className="text-[11px] text-slate-400 text-center mt-2">
-              All details are mandatory to submit your shop for verification.
+              {missingFieldId
+                ? 'All details are mandatory to submit your shop for verification.'
+                : 'Please verify database connectivity and billing limits before proceeding.'}
             </p>
             <div className="mt-4 flex gap-2">
               <button
