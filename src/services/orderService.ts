@@ -104,9 +104,10 @@ export const orderService = {
       async () => {
         const { data, error } = await supabase
           .from('orders')
-          .select('*, order_items(*)')
+          .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
           .eq('shop_id', shopId)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(50);
 
         if (error) {
           console.warn('[orderService.getOrdersByShopId] Error:', error.message);
@@ -114,7 +115,7 @@ export const orderService = {
         }
         return (data || []).map(mapDbOrderToOwnerOrder);
       },
-      { ttlMs: 6000, tags: ['orders', `shop_${shopId}`], forceRefresh, staleWhileRevalidate: true }
+      { ttlMs: 30000, tags: ['orders', `shop_${shopId}`], forceRefresh, staleWhileRevalidate: true }
     );
   },
 
@@ -128,7 +129,7 @@ export const orderService = {
       async () => {
         const { data, error } = await supabase
           .from('orders')
-          .select('*, order_items(*)')
+          .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
           .eq('id', orderId)
           .maybeSingle();
 
@@ -137,7 +138,7 @@ export const orderService = {
         }
         return mapDbOrderToOwnerOrder(data);
       },
-      { ttlMs: 10000, tags: ['orders'] }
+      { ttlMs: 30000, tags: ['orders'] }
     );
   },
 
@@ -151,10 +152,11 @@ export const orderService = {
       async () => {
         const { data, error } = await supabase
           .from('orders')
-          .select('*, order_items(*)')
+          .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
           .eq('shop_id', shopId)
-          .eq('order_status', 'COMPLETED')
-          .order('created_at', { ascending: false });
+          .or('order_status.eq.COMPLETED,status.eq.completed')
+          .order('created_at', { ascending: false })
+          .limit(50);
 
         if (error) {
           console.warn('[orderService.getCompletedOrdersHistory] Error:', error.message);
@@ -162,7 +164,7 @@ export const orderService = {
         }
         return (data || []).map(mapDbOrderToOwnerOrder);
       },
-      { ttlMs: 15000, tags: ['orders', 'completed_orders'], forceRefresh, staleWhileRevalidate: true }
+      { ttlMs: 60000, tags: ['orders', 'completed_orders'], forceRefresh, staleWhileRevalidate: true }
     );
   },
 

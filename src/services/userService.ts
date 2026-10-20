@@ -26,7 +26,7 @@ export const userService = {
   async getUserById(id: string): Promise<DbUser | null> {
     const { data, error } = await supabase
       .from('users')
-      .select('*')
+      .select('id, phone, email, full_name, role, shop_id, profile_completed, is_active, is_demo, created_at, updated_at')
       .eq('id', id)
       .maybeSingle();
 
@@ -46,7 +46,7 @@ export const userService = {
 
     const { data, error } = await supabase
       .from('users')
-      .select('*')
+      .select('id, phone, email, full_name, role, shop_id, profile_completed, is_active, is_demo, created_at, updated_at')
       .or(`phone.eq.${cleanDigits},phone.ilike.%${last10}%`)
       .limit(1)
       .maybeSingle();

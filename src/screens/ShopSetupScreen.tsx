@@ -23,11 +23,12 @@ import {
   ArrowLeft,
   AlertCircle,
   AlertTriangle,
+  LogOut,
   X
 } from 'lucide-react';
 
 export const ShopSetupScreen: React.FC = () => {
-  const { ownerProfile, saveShop, isLoading, setActiveScreen, shop, errorMessage } = useOwnerApp();
+  const { ownerProfile, saveShop, isLoading, setActiveScreen, shop, errorMessage, logout } = useOwnerApp();
 
   // 2-Part Form Navigation: Part 1 (Shop Details) & Part 2 (Document Verification)
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
@@ -599,6 +600,33 @@ export const ShopSetupScreen: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 px-3.5 sm:px-5 py-6 sm:py-8 max-w-xl mx-auto select-none">
       
+      {/* Top Navigation Bar: Back to Sign In & Switch Account */}
+      <div className="flex items-center justify-between mb-4">
+        <button
+          type="button"
+          onClick={async () => {
+            await logout();
+            setActiveScreen('login');
+          }}
+          className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 transition cursor-pointer"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to Sign In</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={async () => {
+            await logout();
+            setActiveScreen('login');
+          }}
+          className="flex items-center gap-1.5 text-xs font-semibold text-red-400 hover:text-red-300 px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/40 border border-red-900/50 transition cursor-pointer"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span>Log Out</span>
+        </button>
+      </div>
+
       {/* Top Brand Header */}
       <div className="text-center mb-5 sm:mb-6">
         <div className="w-12 h-12 rounded-2xl bg-orange-600 flex items-center justify-center mx-auto mb-2.5 shadow-md shadow-orange-600/30">

@@ -209,34 +209,35 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [activeScreen, setActiveScreenState] = useState<ActiveScreen>(() => {
     try {
       const savedProfile = localStorage.getItem('foodfax_owner_profile');
+      const savedShop = localStorage.getItem('foodfax_owner_shop');
       const savedScreen = localStorage.getItem('foodfax_active_screen') as ActiveScreen | null;
-      if (savedProfile) {
+
+      // Only restore authenticated internal screens if user has BOTH an active profile AND an approved shop
+      if (savedProfile && savedShop) {
         const parsedProfile = JSON.parse(savedProfile);
-        if (parsedProfile && parsedProfile.id) {
-          const savedShop = localStorage.getItem('foodfax_owner_shop');
-          if (savedShop) {
-            const parsedShop = JSON.parse(savedShop);
-            if (parsedShop && parsedShop.name) {
-              const isApproved = Boolean(
-                parsedShop.is_active === true ||
-                parsedShop.kyc_status === 'approved' ||
-                parsedShop.kycStatus === 'approved'
-              );
-              if (isApproved) {
-                if (savedScreen && ['dashboard', 'orders', 'menu', 'sales', 'shop_qr', 'profile'].includes(savedScreen)) {
-                  return savedScreen;
-                }
-                return 'dashboard';
-              }
-              return 'kyc_status';
+        const parsedShop = JSON.parse(savedShop);
+        if (parsedProfile && parsedProfile.id && parsedShop && parsedShop.name) {
+          const isApproved = Boolean(
+            parsedShop.is_active === true ||
+            parsedShop.kyc_status === 'approved' ||
+            parsedShop.kycStatus === 'approved'
+          );
+          if (isApproved) {
+            if (savedScreen && ['dashboard', 'orders', 'menu', 'sales', 'shop_qr', 'profile'].includes(savedScreen)) {
+              return savedScreen;
             }
-            return 'shop_setup';
+            return 'dashboard';
           }
-          return 'shop_setup';
+          return 'kyc_status';
         }
       }
-      const hasOnboarded = localStorage.getItem('foodfax_has_onboarded');
-      return hasOnboarded === 'true' ? 'login' : 'onboarding';
+
+      if (savedScreen === 'register') {
+        return 'register';
+      }
+
+      // Default initial landing screen for all users is strictly LOGIN
+      return 'login';
     } catch (_) {
       return 'login';
     }
@@ -398,9 +399,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const { data: ordersData, error } = await client
         .from('orders')
-        .select('*, order_items(*)')
+        .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
         .eq('shop_id', sId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (error) {
         console.warn('Error refreshing orders from Supabase:', error.message);
@@ -496,10 +498,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
 
     try {
-      // 1. Fetch User Record from 'public.users' table
+      // 1. Fetch User Record from 'public.users' table (lean column projection)
       const { data: userData, error: userError } = await client
         .from('users')
-        .select('*')
+        .select('id, email, full_name, phone, role, shop_id, profile_completed, is_active, dashboard_layout')
         .eq('id', userId)
         .maybeSingle();
 
@@ -517,13 +519,15 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         localStorage.setItem('foodfax_owner_profile', JSON.stringify(profile));
       }
 
-      // 2. Fetch Shops belonging to this authenticated owner (or matching owner's phone/id)
+      // 2. Fetch Shops belonging to this authenticated owner (lean column projection)
       const digits = (userData?.phone || userId || '').replace(/\D/g, '');
       const last10 = digits.slice(-10);
       const ownerPhone = userData?.phone || '';
 
+      const shopProjection = 'id, owner_id, name, slug, stall_type, description, phone, contact_phone, address, area, city, state, pincode, latitude, longitude, location_accuracy_meters, last_location_updated_at, is_mobile_stall, upi_id, image, banner_image, opening_time, closing_time, is_open, is_active, is_rush_hour, table_service_available, accepts_delivery, delivery_radius_km, delivery_fee_type, delivery_fee_amount, kyc_status, rejection_reason, fssai_number, fssai_doc_url, owner_id_type, owner_id_number, owner_id_doc_url, address_proof_type, address_proof_doc_url, trade_permit_type, trade_permit_number, trade_permit_doc_url, created_at';
+
       // Query only the authenticated user's shop(s) directly from Supabase
-      let shopsQuery = client.from('shops').select('*');
+      let shopsQuery = client.from('shops').select(shopProjection);
       if (last10) {
         shopsQuery = shopsQuery.or(`owner_id.eq.${userId},phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`);
       } else {
@@ -547,7 +551,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         try {
           const { data: fallbackShop } = await client
             .from('shops')
-            .select('*')
+            .select(shopProjection)
             .eq('owner_id', userId)
             .limit(1);
           if (fallbackShop && fallbackShop.length > 0) {
@@ -645,17 +649,17 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           } catch (_) {}
         }
 
-        // Try reading KYC documents from Supabase kyc_documents table
+        // Try reading KYC documents from Supabase kyc_documents table (lean projection)
         try {
           const { data: dbKycDocs } = await client
             .from('kyc_documents')
-            .select('*')
+            .select('id, shop_id, document_type, document_name, document_number, document_url, status, rejection_reason, updated_at')
             .eq('shop_id', targetShop.id);
 
           if (dbKycDocs && dbKycDocs.length > 0) {
             targetShop.kycDocuments = {
               ...(targetShop.kycDocuments || {}),
-              submittedAt: dbKycDocs[0].created_at || new Date().toISOString(),
+              submittedAt: dbKycDocs[0].updated_at || new Date().toISOString(),
             };
             dbKycDocs.forEach((doc: any) => {
               if (doc.document_type === 'fssai') {
@@ -692,12 +696,13 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         setShop(targetShop);
         const targetShopId = targetShop.id;
 
-        // 3. Fetch Orders from 'public.orders' table
+        // 3. Fetch Orders from 'public.orders' table (limited to latest 50 orders, lean projection)
         const { data: ordersData } = await client
           .from('orders')
-          .select('*, order_items(*)')
+          .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
           .eq('shop_id', targetShopId)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(50);
 
         if (ordersData) {
           const mappedOrders = ordersData.map(mapDbOrderToOwnerOrder);
@@ -706,10 +711,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           setOrders([]);
         }
 
-        // 4. Fetch Categories from 'public.categories' table (both shop-specific and global categories)
+        // 4. Fetch Categories from 'public.categories' table (lean projection)
         const { data: catData } = await client
           .from('categories')
-          .select('*')
+          .select('id, shop_id, name, description, display_order, is_active')
           .or(`shop_id.eq.${targetShopId},shop_id.is.null`)
           .order('display_order', { ascending: true });
 
@@ -733,13 +738,14 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         setMenuCategories(finalCategories);
         indexedDbService.saveCategoriesOffline(finalCategories);
 
-        // 5. Fetch Menu Items from 'public.menu_items' table (excluding soft-deleted)
+        // 5. Fetch Menu Items from 'public.menu_items' table (lean projection, limited to 100)
         const { data: itemsData } = await client
           .from('menu_items')
-          .select('*')
+          .select('id, shop_id, category_id, name, description, price, image, is_veg, is_available, is_bestseller, preparation_time_min, preparation_minutes, display_order, is_active')
           .eq('shop_id', targetShopId)
           .or('is_active.eq.true,is_active.is.null')
-          .order('display_order', { ascending: true });
+          .order('display_order', { ascending: true })
+          .limit(100);
 
         if (itemsData && itemsData.length > 0) {
           const mappedItems: MenuItem[] = itemsData.map((i: any) => ({
@@ -882,9 +888,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
                 return prev;
               });
             } else {
+              // If no shop exists in database, do not hijack login or register screens
               setActiveScreenState((prev) => {
-                if (['splash', 'login', 'onboarding'].includes(prev)) {
-                  return 'shop_setup';
+                if (['splash', 'onboarding'].includes(prev)) {
+                  return 'login';
                 }
                 return prev;
               });
@@ -972,7 +979,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     setRealtimeStatus('connecting');
 
-    const channelName = `shop_orders_global_${shop.id}_${Date.now()}`;
+    const channelName = `shop_orders_${shop.id}`;
     const channel = client
       .channel(channelName)
       .on(
@@ -986,10 +993,12 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
               return;
             }
 
+            const orderProjection = 'id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)';
+
             if (payload.eventType === 'INSERT') {
               const { data } = await client
                 .from('orders')
-                .select('*, order_items(*)')
+                .select(orderProjection)
                 .eq('id', payload.new.id)
                 .maybeSingle();
 
@@ -998,7 +1007,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             } else if (payload.eventType === 'UPDATE') {
               const { data } = await client
                 .from('orders')
-                .select('*, order_items(*)')
+                .select(orderProjection)
                 .eq('id', payload.new.id)
                 .maybeSingle();
 
@@ -1027,16 +1036,18 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
   }, [shop?.id, upsertOrderFromRealtime, removeOrderFromRealtime, refreshOrders]);
 
-  // Background Auto-Polling Fallback: Every 30 seconds (conserves egress quota while keeping orders fresh)
+  // Background Auto-Polling Fallback: Only poll when Realtime is disconnected!
   useEffect(() => {
     if (!shop?.id) return;
     const interval = setInterval(() => {
       if (typeof navigator !== 'undefined' && navigator.onLine && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        // If Realtime WebSocket is connected, skip REST polling to eliminate redundant egress
+        if (realtimeStatus === 'connected') return;
         refreshOrders(shop.id);
       }
-    }, 30000);
+    }, 60000);
     return () => clearInterval(interval);
-  }, [shop?.id, refreshOrders]);
+  }, [shop?.id, refreshOrders, realtimeStatus]);
 
   // Enforce single-shop binding: switchShop is disabled for strict security
   const switchShop = useCallback(
@@ -1121,7 +1132,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       try {
         const { data: dbUsers, error: userQueryErr } = await client
           .from('users')
-          .select('*')
+          .select('id, phone, email, full_name, role, password')
           .or(`phone.eq.${cleanPhone},phone.eq.${standardPhone},phone.eq.${last10},phone.ilike.%${last10}%`);
 
         if (userQueryErr) {
@@ -1141,7 +1152,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         if (!foundUser && !isQuotaRestricted) {
           const { data: dbShops, error: shopQueryErr } = await client
             .from('shops')
-            .select('*')
+            .select('id, owner_id, name, phone, contact_phone')
             .or(`phone.eq.${cleanPhone},phone.eq.${standardPhone},phone.eq.${last10},phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`);
 
           if (shopQueryErr && (shopQueryErr.message?.includes('exceed_egress_quota') || (shopQueryErr as any).status === 402)) {
@@ -1382,7 +1393,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       try {
         const { data: dbUsers } = await client
           .from('users')
-          .select('*')
+          .select('id, phone, email, full_name, role')
           .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`);
 
         if (dbUsers && dbUsers.length > 0) {
@@ -1392,7 +1403,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         } else {
           const { data: dbShops } = await client
             .from('shops')
-            .select('*')
+            .select('id, owner_id, name')
             .or(`phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`)
             .limit(1);
           if (dbShops && dbShops.length > 0) {
@@ -1469,7 +1480,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         // Robust check across users table using 10 digits to catch any format (+91, 91, raw)
         const { data: existingUsers, error: queryErr } = await client
           .from('users')
-          .select('*')
+          .select('id, phone, email')
           .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`);
 
         if (queryErr) {
@@ -2692,10 +2703,11 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const { data, error } = await client
         .from('orders')
-        .select('*, order_items(*)')
+        .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
         .eq('shop_id', shop.id)
-        .eq('order_status', 'COMPLETED')
-        .order('created_at', { ascending: false });
+        .or('order_status.eq.COMPLETED,status.eq.completed')
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (error || !data) {
         console.warn('Error fetching completed orders history:', error?.message);
@@ -2750,7 +2762,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     try {
       const targetShopId = shop?.id;
-      let query = client.from('shops').select('*');
+      let query = client.from('shops').select('id, owner_id, name, is_active, kyc_status, rejection_reason, kyc_rejection_reason, featured_item, fssai_doc_url, owner_id_doc_url, address_proof_doc_url, trade_permit_doc_url');
       if (targetShopId) {
         query = query.eq('id', targetShopId);
       } else {

@@ -310,4 +310,21 @@ Files aur documents ko database tables me heavy base64 strings ke roop me save *
 - [x] Menu items write to `public.menu_items` with foreign keys to `shops.id` and `categories.id`.
 - [x] Zero mock / fake / hardcoded vendor data in code.
 - [x] Deletion of any record in Supabase immediately propagates and clears local cache.
+- [x] Zero `select('*')` allowed: Always use explicit column lists and pagination limits.
+- [x] No duplicate REST polling when Realtime WebSocket is connected.
+
+---
+
+## 7. Anti-Egress & Log Query Optimization Rules
+
+To prevent exceeding Supabase Free tier quotas (5 GB Egress, 100 GB Log Query):
+
+1. **Zero `select('*')` Policy:**
+   - Table `shops` has large JSON fields (`kyc_documents`) and doc URLs. Normal shop queries MUST NEVER fetch `select('*')`. Use lean projection `id, name, slug, phone, address, is_open, is_active, ...`.
+   - Table `orders` MUST ALWAYS use explicit columns and be restricted to `.limit(50)`.
+2. **Conditional Polling:**
+   - When Supabase Realtime WebSocket status is `'connected'`, background HTTP polling is **completely skipped**.
+   - If WebSocket drops, polling runs at maximum once every 60s, strictly when `document.visibilityState === 'visible'`.
+3. **Log Query Caution (Dashboard):**
+   - In Supabase Dashboard -> **Logs Explorer**, NEVER leave **"Auto-refresh"** enabled. Auto-refreshing scans 10-25 GB of logs per minute in ClickHouse, quickly burning through the 100 GB Log Query allowance.
 

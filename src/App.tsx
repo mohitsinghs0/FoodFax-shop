@@ -67,16 +67,16 @@ const MainAppContent: React.FC = () => {
   const isPublicScreen = ['splash', 'onboarding', 'login', 'register'].includes(activeScreen);
   let effectiveScreen: ActiveScreen;
 
-  if (!isAuthenticated) {
-    effectiveScreen = isPublicScreen ? activeScreen : 'login';
+  if (isPublicScreen) {
+    effectiveScreen = activeScreen;
+  } else if (!isAuthenticated) {
+    effectiveScreen = 'login';
   } else if (!hasCompletedShopSetup) {
-    effectiveScreen = ['shop_setup', 'profile'].includes(activeScreen) ? activeScreen : 'shop_setup';
+    effectiveScreen = ['shop_setup', 'profile'].includes(activeScreen) ? activeScreen : 'login';
   } else if (!isApproved) {
-    effectiveScreen = ['shop_setup', 'profile'].includes(activeScreen) ? activeScreen : 'kyc_status';
+    effectiveScreen = ['shop_setup', 'profile', 'kyc_status'].includes(activeScreen) ? activeScreen : 'kyc_status';
   } else {
-    effectiveScreen = ['splash', 'login', 'register', 'kyc_status'].includes(activeScreen)
-      ? 'dashboard'
-      : activeScreen;
+    effectiveScreen = activeScreen;
   }
 
   return (

@@ -38,7 +38,7 @@ export const menuService = {
       async () => {
         const { data, error } = await supabase
           .from('categories')
-          .select('*')
+          .select('id, shop_id, name, description, display_order, is_active')
           .or(`shop_id.eq.${shopId},shop_id.is.null`)
           .order('display_order', { ascending: true });
 
@@ -126,9 +126,10 @@ export const menuService = {
       async () => {
         const { data, error } = await supabase
           .from('menu_items')
-          .select('*')
+          .select('id, shop_id, category_id, name, description, price, is_veg, is_available, image, preparation_time_min, preparation_minutes, is_bestseller, display_order')
           .eq('shop_id', shopId)
-          .order('display_order', { ascending: true });
+          .order('display_order', { ascending: true })
+          .limit(100);
 
         if (error) {
           console.warn('[menuService.getMenuItems] Error:', error.message);

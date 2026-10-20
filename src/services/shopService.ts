@@ -79,6 +79,8 @@ export function mapDbShopToAppShop(s: DbShop): Shop {
   };
 }
 
+export const SHOP_SELECT_COLUMNS = 'id, owner_id, name, stall_type, is_mobile_stall, description, phone, contact_phone, address, area, city, state, pincode, latitude, longitude, location_accuracy_meters, last_location_updated_at, opening_time, closing_time, upi_id, image, banner_image, is_open, is_rush_hour, table_service_available, accepts_delivery, delivery_radius_km, delivery_fee_type, delivery_fee_amount, rating, total_reviews, preparation_time_minutes, created_at';
+
 export const shopService = {
   /**
    * Fetch shop associated with owner user ID (cached with stale-while-revalidate)
@@ -90,7 +92,7 @@ export const shopService = {
       async () => {
         const { data, error } = await supabase
           .from('shops')
-          .select('*')
+          .select(SHOP_SELECT_COLUMNS)
           .eq('owner_id', ownerId)
           .maybeSingle();
 
@@ -114,7 +116,7 @@ export const shopService = {
       async () => {
         const { data, error } = await supabase
           .from('shops')
-          .select('*')
+          .select(SHOP_SELECT_COLUMNS)
           .eq('id', shopId)
           .maybeSingle();
 
@@ -324,10 +326,10 @@ export const shopService = {
       // Fallback query if RPC ever encounters an issue
       const { data: fallbackData } = await supabase
         .from('shops')
-        .select('*')
+        .select(SHOP_SELECT_COLUMNS)
         .eq('is_active', true)
         .eq('is_open', true)
-        .limit(30);
+        .limit(20);
 
       return (fallbackData || []).map((d) => mapDbShopToAppShop(d as DbShop));
     } catch (err) {
