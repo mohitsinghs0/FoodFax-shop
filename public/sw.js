@@ -54,7 +54,7 @@ self.addEventListener('fetch', (event) => {
         if (
           networkResponse &&
           networkResponse.status === 200 &&
-          (url.origin === self.location.origin || url.hostname.includes('supabase.co'))
+          (url.origin === self.location.origin || url.hostname.includes('supabase.co') || url.port === '8000')
         ) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {

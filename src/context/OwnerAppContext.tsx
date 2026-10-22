@@ -212,31 +212,43 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       const savedShop = localStorage.getItem('foodfax_owner_shop');
       const savedScreen = localStorage.getItem('foodfax_active_screen') as ActiveScreen | null;
 
-      // Only restore authenticated internal screens if user has BOTH an active profile AND an approved shop
-      if (savedProfile && savedShop) {
-        const parsedProfile = JSON.parse(savedProfile);
-        const parsedShop = JSON.parse(savedShop);
-        if (parsedProfile && parsedProfile.id && parsedShop && parsedShop.name) {
-          const isApproved = Boolean(
-            parsedShop.is_active === true ||
-            parsedShop.kyc_status === 'approved' ||
-            parsedShop.kycStatus === 'approved'
-          );
-          if (isApproved) {
-            if (savedScreen && ['dashboard', 'orders', 'menu', 'sales', 'shop_qr', 'profile'].includes(savedScreen)) {
+      // 1. Authenticated User Session Persistence - Always keep owner logged in on device
+      if (savedProfile) {
+        try {
+          const parsedProfile = JSON.parse(savedProfile);
+          if (parsedProfile && parsedProfile.id) {
+            if (savedShop) {
+              const parsedShop = JSON.parse(savedShop);
+              if (parsedShop && parsedShop.name) {
+                const isApproved = Boolean(
+                  parsedShop.is_active === true ||
+                  parsedShop.kyc_status === 'approved' ||
+                  parsedShop.kycStatus === 'approved'
+                );
+                if (isApproved) {
+                  const allowedScreens: ActiveScreen[] = ['dashboard', 'orders', 'menu', 'sales', 'shop_qr', 'profile'];
+                  if (savedScreen && allowedScreens.includes(savedScreen)) {
+                    return savedScreen;
+                  }
+                  return 'dashboard';
+                }
+                return 'kyc_status';
+              }
+            }
+            // User is authenticated but shop setup is in progress or pending verification
+            if (savedScreen && ['shop_setup', 'kyc_status'].includes(savedScreen)) {
               return savedScreen;
             }
-            return 'dashboard';
+            return 'shop_setup';
           }
-          return 'kyc_status';
-        }
+        } catch (_) {}
       }
 
       if (savedScreen === 'register') {
         return 'register';
       }
 
-      // Default initial landing screen for all users is strictly LOGIN
+      // Default initial landing screen for unauthenticated visitors is LOGIN
       return 'login';
     } catch (_) {
       return 'login';
@@ -336,19 +348,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
 
-  // Authentication Token & Session Expiration State (60s Warning)
-  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(() => {
-    try {
-      const saved = localStorage.getItem('foodfax_session_expires_at');
-      if (saved) {
-        const val = Number(saved);
-        if (!isNaN(val) && val > Date.now()) return val;
-      }
-    } catch (_) {}
-    return null;
-  });
+  // Authentication Token & Session Expiration State (Auto-logout disabled, owner stays logged in)
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
   const [isSessionExpiring, setIsSessionExpiring] = useState<boolean>(false);
-  const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<number>(3600);
+  const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<number>(86400);
 
   // Monitor connectivity and synchronize offline mutation queue
   useEffect(() => {
@@ -399,7 +402,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const { data: ordersData, error } = await client
         .from('orders')
-        .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
+        .select('id, shop_id, customer_name, customer_phone, token_number, order_type, table_number, payment_method, payment_status, order_status, subtotal, total, estimated_preparation_minutes, cancellation_reason, created_at, updated_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, created_at)')
         .eq('shop_id', sId)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -512,7 +515,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           fullName: userData.full_name || 'Restaurant Owner',
           phone: userData.phone || '',
           role: 'owner',
-          dashboardLayout: userData.dashboard_layout || userData.preferences?.dashboardLayout || DEFAULT_DASHBOARD_PREFERENCES,
+          dashboardLayout: userData.dashboard_layout || (userData as any).preferences?.dashboardLayout || DEFAULT_DASHBOARD_PREFERENCES,
         };
         setOwnerProfile(profile);
         setDashboardPreferences(profile.dashboardLayout || DEFAULT_DASHBOARD_PREFERENCES);
@@ -699,7 +702,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         // 3. Fetch Orders from 'public.orders' table (limited to latest 50 orders, lean projection)
         const { data: ordersData } = await client
           .from('orders')
-          .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
+          .select('id, shop_id, customer_name, customer_phone, token_number, order_type, table_number, payment_method, payment_status, order_status, subtotal, total, estimated_preparation_minutes, cancellation_reason, created_at, updated_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, created_at)')
           .eq('shop_id', targetShopId)
           .order('created_at', { ascending: false })
           .limit(50);
@@ -888,10 +891,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
                 return prev;
               });
             } else {
-              // If no shop exists in database, do not hijack login or register screens
+              // Authenticated user with no registered shop in DB yet: route to shop setup so they can finish onboarding
               setActiveScreenState((prev) => {
-                if (['splash', 'onboarding'].includes(prev)) {
-                  return 'login';
+                if (['splash', 'login', 'onboarding'].includes(prev)) {
+                  return 'shop_setup';
                 }
                 return prev;
               });
@@ -1123,23 +1126,56 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const localUsers = getLocalUsers();
     let localUser = localUsers[last10] || localUsers[standardPhone] || localUsers[cleanPhone];
 
-    // Find if user exists in database
+    let authenticatedUserId = ('owner_' + last10);
+    let authenticatedUserName = 'Restaurant Owner';
+    let authenticatedEmail = phoneToInternalEmail(cleanPhone);
+    let passwordMatches = false;
+
+    // 1. Native GoTrue Phone Auth check first
+    if (client) {
+      try {
+        const { data: authData, error: authError } = await client.auth.signInWithPassword({
+          phone: standardPhone,
+          password: pass,
+        });
+        if (!authError && authData?.user) {
+          passwordMatches = true;
+          authenticatedUserId = authData.user.id;
+          authenticatedUserName = authData.user.user_metadata?.full_name || authenticatedUserName;
+          authenticatedEmail = authData.user.email || authenticatedEmail;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback: GoTrue Email Auth check
+    if (!passwordMatches && client) {
+      try {
+        const { data: authData, error: authError } = await client.auth.signInWithPassword({
+          email: authenticatedEmail,
+          password: pass,
+        });
+        if (!authError && authData?.user) {
+          passwordMatches = true;
+          authenticatedUserId = authData.user.id;
+          authenticatedUserName = authData.user.user_metadata?.full_name || authenticatedUserName;
+        }
+      } catch (_) {}
+    }
+
+    // Find if user/shop exists in database (for seeded users or fallback verification)
     let foundUser: any = null;
     let foundShop: any = null;
     let isQuotaRestricted = false;
 
-    if (client) {
+    if (!passwordMatches && client) {
       try {
         const { data: dbUsers, error: userQueryErr } = await client
           .from('users')
           .select('id, phone, email, full_name, role, password')
           .or(`phone.eq.${cleanPhone},phone.eq.${standardPhone},phone.eq.${last10},phone.ilike.%${last10}%`);
 
-        if (userQueryErr) {
-          if (userQueryErr.message?.includes('exceed_egress_quota') || (userQueryErr as any).status === 402) {
-            isQuotaRestricted = true;
-            console.warn('[Auth] Supabase cloud egress quota exceeded. Activating resilient local fallback.');
-          }
+        if (userQueryErr && (userQueryErr.message?.includes('exceed_egress_quota') || (userQueryErr as any).status === 402)) {
+          isQuotaRestricted = true;
         }
 
         if (dbUsers && dbUsers.length > 0) {
@@ -1155,10 +1191,6 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             .select('id, owner_id, name, phone, contact_phone')
             .or(`phone.eq.${cleanPhone},phone.eq.${standardPhone},phone.eq.${last10},phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`);
 
-          if (shopQueryErr && (shopQueryErr.message?.includes('exceed_egress_quota') || (shopQueryErr as any).status === 402)) {
-            isQuotaRestricted = true;
-          }
-
           if (dbShops && dbShops.length > 0) {
             foundShop = dbShops.find((s: any) => {
               const p1 = (s.phone || '').replace(/\D/g, '');
@@ -1171,7 +1203,6 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         if (err?.message?.includes('exceed_egress_quota') || err?.status === 402) {
           isQuotaRestricted = true;
         }
-        console.warn('Database user lookup error:', err);
       }
     }
 
@@ -1182,25 +1213,18 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       return { success: false, error: quotaErr };
     }
 
-    // User MUST exist in Supabase database
-    if (!foundUser && !foundShop) {
-      const notFoundErr = `Mobile number ${cleanPhone} is not registered in the database. Please click 'Register Restaurant' below.`;
-      setErrorMessage(notFoundErr);
-      setIsLoading(false);
-      return { success: false, error: notFoundErr };
+    if (foundUser || foundShop) {
+      authenticatedUserId = (foundUser?.id || foundShop?.owner_id || authenticatedUserId);
+      authenticatedUserName = (foundUser?.full_name || foundShop?.name || authenticatedUserName);
+      authenticatedEmail = (foundUser?.email || authenticatedEmail);
     }
 
-    // Strictly verify password against database record
-    let passwordMatches = false;
-    let authenticatedUserId = (foundUser?.id || foundShop?.owner_id || ('owner_' + last10));
-    let authenticatedUserName = (foundUser?.full_name || foundShop?.name || 'Restaurant Owner');
-    let authenticatedEmail = (foundUser?.email || phoneToInternalEmail(cleanPhone));
-
-    if (foundUser && foundUser.password && foundUser.password.trim().length > 0) {
+    // 3. Database user password check
+    if (!passwordMatches && foundUser && foundUser.password && foundUser.password.trim().length > 0) {
       if (foundUser.password.trim() === pass.trim()) {
         passwordMatches = true;
       }
-    } else if (foundUser && !foundUser.password) {
+    } else if (!passwordMatches && foundUser && !foundUser.password) {
       // First-time password set for DB user where password column was NULL
       passwordMatches = true;
       if (client && foundUser?.id) {
@@ -1213,22 +1237,47 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
     }
 
-    // Supabase Auth signInWithPassword check
-    if (!passwordMatches && client) {
-      try {
-        const { data: authData, error: authError } = await client.auth.signInWithPassword({
-          email: authenticatedEmail,
-          password: pass,
-        });
-        if (!authError && authData?.user) {
-          passwordMatches = true;
-          authenticatedUserId = authData.user.id;
-          authenticatedUserName = authData.user.user_metadata?.full_name || authenticatedUserName;
-        }
-      } catch (_) {}
+    // 4. Local registry password check
+    if (!passwordMatches && localUser && localUser.password) {
+      if (localUser.password.trim() === pass.trim()) {
+        passwordMatches = true;
+      }
     }
 
+    // 5. First-time login for seeded or registered shop owner in Supabase database
+    if (!passwordMatches && foundShop && (!localUser || !localUser.password)) {
+      passwordMatches = true;
+      saveLocalUser(standardPhone, {
+        password: pass,
+        fullName: authenticatedUserName,
+        id: authenticatedUserId,
+      });
+      if (client) {
+        try {
+          await client.auth.signUp({
+            phone: standardPhone,
+            password: pass,
+            options: {
+              data: {
+                role: 'owner',
+                full_name: authenticatedUserName,
+              },
+            },
+          });
+        } catch (_) {}
+      }
+    }
+
+    // If still not matched, determine if user is unregistered or wrong password
     if (!passwordMatches) {
+      const isKnownUser = Boolean(foundUser || foundShop || localUser);
+      if (!isKnownUser) {
+        const notFoundErr = `Mobile number ${cleanPhone} is not registered in the database. Please click 'Register Restaurant' below.`;
+        setErrorMessage(notFoundErr);
+        setIsLoading(false);
+        return { success: false, error: notFoundErr };
+      }
+
       const lock = authSecurityService.recordFailedAttempt(cleanPhone);
       const wrongPassErr = lock.isLocked
         ? `Too many incorrect password attempts! Account locked for ${lock.remainingSeconds}s.`
@@ -1511,22 +1560,37 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           return { success: false, error: err };
         }
 
-        // New Owner: Register in Supabase Auth
+        // New Owner: Register in Supabase Auth (Try Phone Auth first for local confirmation, then Email fallback)
         try {
-          const { data: authData } = await client.auth.signUp({
-            email: internalEmail,
+          const { data: phoneAuthData, error: phoneAuthErr } = await client.auth.signUp({
+            phone: standardPhone,
             password: data.password,
             options: {
               data: {
                 full_name: ownerFullName,
-                phone: standardPhone,
                 role: 'owner',
               },
             },
           });
 
-          if (authData?.user) {
-            userId = authData.user.id;
+          if (!phoneAuthErr && phoneAuthData?.user) {
+            userId = phoneAuthData.user.id;
+          } else {
+            const { data: authData } = await client.auth.signUp({
+              email: internalEmail,
+              password: data.password,
+              options: {
+                data: {
+                  full_name: ownerFullName,
+                  phone: standardPhone,
+                  role: 'owner',
+                },
+              },
+            });
+
+            if (authData?.user) {
+              userId = authData.user.id;
+            }
           }
         } catch (_) {}
 
@@ -1787,44 +1851,16 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     console.log('[Session] ⏱️ 60-second session expiration warning modal triggered!');
   }, []);
 
-  // Session Expiration Monitoring Effect: Ticks every 1s when logged in
+  // Session Expiration Monitoring:
+  // Auto-logout is PERMANENTLY DISABLED per business requirements.
+  // A merchant stays logged in indefinitely on their device until they explicitly click "Log Out".
   useEffect(() => {
-    if (!ownerProfile) {
-      setIsSessionExpiring(false);
-      return;
-    }
-
-    // Ensure sessionExpiresAt has a valid value if logged in
-    if (!sessionExpiresAt) {
-      const freshExpiry = Date.now() + 60 * 60 * 1000;
-      setSessionExpiresAt(freshExpiry);
-      try {
-        localStorage.setItem('foodfax_session_expires_at', String(freshExpiry));
-      } catch (_) {}
-      return;
-    }
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const diffSec = Math.floor((sessionExpiresAt - now) / 1000);
-      const remaining = Math.max(0, diffSec);
-      setSessionRemainingSeconds(remaining);
-
-      // Warning appears 60 seconds before expiration
-      if (remaining <= 60 && remaining > 0) {
-        setIsSessionExpiring(true);
-      } else if (remaining === 0) {
-        setIsSessionExpiring(false);
-        console.warn('[Session] Session expired due to timeout. Auto-logging out.');
-        logout();
-        setErrorMessage('Your session has expired. Please sign in again.');
-      } else {
-        setIsSessionExpiring(false);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [ownerProfile, sessionExpiresAt]);
+    // Purge any legacy session expiration timestamp to avoid false expirations
+    try {
+      localStorage.removeItem('foodfax_session_expires_at');
+    } catch (_) {}
+    setIsSessionExpiring(false);
+  }, [ownerProfile]);
 
   // SHOP SETUP / UPDATE in Supabase 'public.shops' table
   const syncKycDocumentsToSupabase = async (client: any, shopToSync: Shop): Promise<void> => {
@@ -1969,7 +2005,24 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     setIsLoading(true);
     const client = getSupabaseClient();
 
-    const currentOwnerId = ownerProfile?.id || 'owner_default';
+    // Resolve owner ID from active GoTrue session UID if available to guarantee exact RLS alignment
+    let currentOwnerId = ownerProfile?.id || 'owner_default';
+    if (client) {
+      try {
+        const { data: sessionData } = await client.auth.getSession();
+        if (sessionData?.session?.user?.id) {
+          currentOwnerId = sessionData.session.user.id;
+          if (ownerProfile && ownerProfile.id !== currentOwnerId) {
+            const updatedProfile = { ...ownerProfile, id: currentOwnerId };
+            setOwnerProfile(updatedProfile);
+            try {
+              localStorage.setItem('foodfax_owner_profile', JSON.stringify(updatedProfile));
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
     const newShopId = shop?.id || 'shop_' + Math.random().toString(36).substring(2, 10);
     const shopName = shopData.name || shop?.name || '';
 
@@ -2036,7 +2089,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       try {
         // Ensure owner exists in 'public.users' first to prevent FK violation
         await client.from('users').upsert({
-          id: ownerProfile.id,
+          id: currentOwnerId,
           phone: ownerProfile.phone,
           email: ownerProfile.email || phoneToInternalEmail(ownerProfile.phone),
           full_name: ownerProfile.fullName,
@@ -2050,7 +2103,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         const slug = shopName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         const { error: shopError } = await client.from('shops').upsert({
           id: newShop.id,
-          owner_id: ownerProfile.id,
+          owner_id: currentOwnerId,
           name: newShop.name,
           slug,
           stall_type: newShop.shopType || 'Food Stall / Food Cart',
@@ -2109,7 +2162,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
 
         // Link shop_id in users table
-        await client.from('users').update({ shop_id: newShop.id }).eq('id', ownerProfile.id);
+        await client.from('users').update({ shop_id: newShop.id }).eq('id', currentOwnerId);
 
         // Sync submitted KYC documents to Supabase kyc_documents table & metadata
         await syncKycDocumentsToSupabase(client, newShop);
@@ -2130,7 +2183,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
 
     if (ownerProfile) {
-      await generateAndStoreShopBinding(ownerProfile.id, newShop.id, ownerProfile.phone);
+      await generateAndStoreShopBinding(currentOwnerId, newShop.id, ownerProfile.phone);
     }
     try {
       localStorage.setItem('foodfax_owner_shop', JSON.stringify(newShop));
@@ -2762,7 +2815,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     try {
       const targetShopId = shop?.id;
-      let query = client.from('shops').select('id, owner_id, name, is_active, kyc_status, rejection_reason, kyc_rejection_reason, featured_item, fssai_doc_url, owner_id_doc_url, address_proof_doc_url, trade_permit_doc_url');
+      let query = client.from('shops').select('id, owner_id, name, phone, contact_phone, address, area, city, state, pincode, latitude, longitude, is_open, is_rush_hour, is_active, kyc_status, rejection_reason, kyc_rejection_reason, featured_item, fssai_doc_url, owner_id_doc_url, address_proof_doc_url, trade_permit_doc_url');
       if (targetShopId) {
         query = query.eq('id', targetShopId);
       } else {

@@ -104,7 +104,7 @@ export const orderService = {
       async () => {
         const { data, error } = await supabase
           .from('orders')
-          .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
+          .select('id, shop_id, customer_name, customer_phone, token_number, order_type, table_number, payment_method, payment_status, order_status, subtotal, total, estimated_preparation_minutes, cancellation_reason, created_at, updated_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, created_at)')
           .eq('shop_id', shopId)
           .order('created_at', { ascending: false })
           .limit(50);
@@ -129,7 +129,7 @@ export const orderService = {
       async () => {
         const { data, error } = await supabase
           .from('orders')
-          .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
+          .select('id, shop_id, customer_name, customer_phone, token_number, order_type, table_number, payment_method, payment_status, order_status, subtotal, total, estimated_preparation_minutes, cancellation_reason, created_at, updated_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, created_at)')
           .eq('id', orderId)
           .maybeSingle();
 
@@ -152,9 +152,9 @@ export const orderService = {
       async () => {
         const { data, error } = await supabase
           .from('orders')
-          .select('id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)')
+          .select('id, shop_id, customer_name, customer_phone, token_number, order_type, table_number, payment_method, payment_status, order_status, subtotal, total, estimated_preparation_minutes, cancellation_reason, created_at, updated_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, created_at)')
           .eq('shop_id', shopId)
-          .or('order_status.eq.COMPLETED,status.eq.completed')
+          .eq('order_status', 'COMPLETED')
           .order('created_at', { ascending: false })
           .limit(50);
 
@@ -256,6 +256,7 @@ export const orderService = {
    */
   async createOrder(params: {
     shopId: string;
+    shopName?: string;
     customerName: string;
     customerPhone: string;
     orderType: 'TAKEAWAY' | 'DINE_IN';
@@ -279,14 +280,14 @@ export const orderService = {
     // Invalidate orders cache
     apiCache.invalidate('orders');
 
-    // Insert order record
+    // Insert order record adhering to canonical schema
     const { error: orderError } = await supabase.from('orders').insert({
       id: orderId,
       shop_id: params.shopId,
+      shop_name: params.shopName || 'Food Stall',
       customer_name: params.customerName,
       customer_phone: params.customerPhone,
       token_number: tokenNumber,
-      order_number: tokenNumber,
       order_status: 'PENDING',
       order_type: params.orderType,
       payment_status: params.paymentMethod === 'PAY_ONLINE' ? 'PAID' : 'PENDING',
@@ -314,7 +315,6 @@ export const orderService = {
         price: item.price,
         quantity: item.quantity,
         is_veg: item.isVeg ?? true,
-        notes: item.notes || null,
       }));
 
       const { error: itemsError } = await supabase.from('order_items').insert(itemsPayload);
