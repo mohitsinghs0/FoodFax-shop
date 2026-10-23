@@ -22,3 +22,7 @@ createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </StrictMode>,
 );
+
+if (typeof window !== 'undefined') {
+  sessionStorage.removeItem('ff_chunk_reloaded');
+}
