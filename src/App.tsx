@@ -67,12 +67,19 @@ const MainAppContent: React.FC = () => {
   const isPublicScreen = ['splash', 'onboarding', 'login', 'register'].includes(activeScreen);
   let effectiveScreen: ActiveScreen;
 
-  if (isPublicScreen) {
-    effectiveScreen = activeScreen;
-  } else if (!isAuthenticated) {
-    effectiveScreen = 'login';
+  if (!isAuthenticated) {
+    effectiveScreen = isPublicScreen ? activeScreen : 'login';
+  } else if (isPublicScreen) {
+    // Authenticated user landing on a public screen: automatically transition to internal workspace
+    if (!hasCompletedShopSetup) {
+      effectiveScreen = 'shop_setup';
+    } else if (!isApproved) {
+      effectiveScreen = 'kyc_status';
+    } else {
+      effectiveScreen = 'dashboard';
+    }
   } else if (!hasCompletedShopSetup) {
-    effectiveScreen = ['shop_setup', 'profile'].includes(activeScreen) ? activeScreen : 'login';
+    effectiveScreen = ['shop_setup', 'profile'].includes(activeScreen) ? activeScreen : 'shop_setup';
   } else if (!isApproved) {
     effectiveScreen = ['shop_setup', 'profile', 'kyc_status'].includes(activeScreen) ? activeScreen : 'kyc_status';
   } else {

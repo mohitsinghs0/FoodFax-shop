@@ -9,10 +9,16 @@ const isHttps = isBrowser && window.location.protocol === 'https:';
 const CLOUDFLARE_TUNNEL_URL = 'https://api.foodfax.in';
 const LOCAL_GATEWAY_URL = 'http://127.0.0.1:8000';
 
-// When running on HTTPS (Vercel production), NEVER use http://127.0.0.1:8000 to avoid Mixed Content block!
+// When running on HTTPS (Vercel production), or if old temporary trycloudflare URL is present,
+// always use the permanent Cloudflare tunnel gateway to guarantee live connectivity!
 let supabaseUrl: string = envSupabaseUrl || (isHttps ? CLOUDFLARE_TUNNEL_URL : LOCAL_GATEWAY_URL);
-if (isHttps && supabaseUrl.startsWith('http://')) {
-  supabaseUrl = CLOUDFLARE_TUNNEL_URL;
+if (
+  !supabaseUrl ||
+  supabaseUrl.includes('trycloudflare.com') ||
+  supabaseUrl.includes('aftmqdmiwvpbpsdmsfbu') ||
+  (isHttps && supabaseUrl.startsWith('http://'))
+) {
+  supabaseUrl = isHttps ? CLOUDFLARE_TUNNEL_URL : LOCAL_GATEWAY_URL;
 }
 
 const supabaseAnonKey: string = 

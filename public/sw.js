@@ -3,7 +3,7 @@
  * Ensures smooth network updates without stale bundle locking.
  */
 
-const CACHE_NAME = 'foodfax-shop-v3';
+const CACHE_NAME = 'foodfax-shop-v4';
 
 self.addEventListener('install', (event) => {
   // Activate new worker immediately
@@ -11,7 +11,7 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  // Purge all old caches (v1, v2, etc.) to prevent stale index.html or chunk hash mismatch
+  // Purge all old caches (v1, v2, v3, etc.) to prevent stale index.html or chunk hash mismatch
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -29,8 +29,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET requests, websockets, and external APIs
-  if (event.request.method !== 'GET' || url.protocol === 'ws:' || url.protocol === 'wss:') {
+  // Skip non-GET requests, websockets, and external APIs (Supabase, Maps, CDNs, etc.)
+  if (
+    event.request.method !== 'GET' ||
+    url.protocol === 'ws:' ||
+    url.protocol === 'wss:' ||
+    url.origin !== self.location.origin
+  ) {
     return;
   }
 
