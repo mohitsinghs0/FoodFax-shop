@@ -736,7 +736,47 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             isActive: c.is_active ?? true,
           }));
         } else {
-          finalCategories = defaultCategories;
+          // Auto-seed canonical categories into public.categories so that foreign key constraints are satisfied
+          const seedCategories = DEFAULT_MENU_CATEGORIES.map((c, idx) => ({
+            id: `cat_${targetShopId}_${idx + 1}`,
+            shop_id: targetShopId,
+            name: c.name,
+            display_order: c.sortOrder ?? idx,
+            is_active: true,
+          }));
+
+          try {
+            const { data: insertedCats, error: seedError } = await client
+              .from('categories')
+              .insert(seedCategories)
+              .select('id, shop_id, name, display_order, is_active');
+
+            if (!seedError && insertedCats && insertedCats.length > 0) {
+              finalCategories = insertedCats.map((c: any) => ({
+                id: c.id,
+                shopId: c.shop_id || targetShopId,
+                name: c.name,
+                sortOrder: c.display_order ?? 0,
+                isActive: c.is_active ?? true,
+              }));
+            } else {
+              finalCategories = seedCategories.map((c) => ({
+                id: c.id,
+                shopId: c.shop_id,
+                name: c.name,
+                sortOrder: c.display_order,
+                isActive: true,
+              }));
+            }
+          } catch (_) {
+            finalCategories = seedCategories.map((c) => ({
+              id: c.id,
+              shopId: c.shop_id,
+              name: c.name,
+              sortOrder: c.display_order,
+              isActive: true,
+            }));
+          }
         }
         setMenuCategories(finalCategories);
         indexedDbService.saveCategoriesOffline(finalCategories);
@@ -2336,10 +2376,67 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     indexedDbService.saveMenuItemOffline(item);
 
     const client = getSupabaseClient();
+
+    // 3. Resolve category ID to ensure it exists in public.categories (prevents FK violation)
+    let resolvedCategoryId: string | null = null;
+    if (item.categoryId) {
+      const matchedCat = menuCategories.find(
+        (c) => c.id === item.categoryId || c.name.toLowerCase() === item.categoryId?.toLowerCase()
+      );
+      const catName = matchedCat?.name || item.categoryId;
+
+      if (client && navigator.onLine) {
+        try {
+          // Check if category exists by ID or by name for this shop
+          const { data: existingCat } = await client
+            .from('categories')
+            .select('id')
+            .or(`id.eq.${item.categoryId},and(shop_id.eq.${shop.id},name.ilike.${catName})`)
+            .limit(1)
+            .maybeSingle();
+
+          if (existingCat) {
+            resolvedCategoryId = existingCat.id;
+          } else {
+            // Auto-create category in public.categories so FK constraint is satisfied
+            const newCatId = item.categoryId.startsWith('cat-')
+              ? `cat_${shop.id}_${Date.now().toString(36)}`
+              : item.categoryId;
+
+            const { error: catErr } = await client.from('categories').insert({
+              id: newCatId,
+              shop_id: shop.id,
+              name: catName,
+              display_order: 0,
+              is_active: true,
+            });
+
+            if (!catErr) {
+              resolvedCategoryId = newCatId;
+              setMenuCategories((prev) => {
+                const already = prev.some((c) => c.id === newCatId);
+                return already
+                  ? prev
+                  : [...prev, { id: newCatId, shopId: shop.id, name: catName, sortOrder: 0, isActive: true }];
+              });
+            } else {
+              console.warn('[saveMenuItem] Category insert error, fallback to null to avoid FK error:', catErr.message);
+              resolvedCategoryId = null;
+            }
+          }
+        } catch (e) {
+          console.warn('[saveMenuItem] Exception resolving category:', e);
+          resolvedCategoryId = null;
+        }
+      } else {
+        resolvedCategoryId = item.categoryId;
+      }
+    }
+
     const payload = {
       id: item.id,
       shop_id: shop.id,
-      category_id: item.categoryId || null,
+      category_id: resolvedCategoryId,
       name: item.name,
       description: item.description || null,
       price: Number(item.price),
@@ -2356,7 +2453,16 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     if (client && navigator.onLine) {
       try {
-        const { error: itemError } = await client.from('menu_items').upsert(payload, { onConflict: 'id' });
+        let { error: itemError } = await client.from('menu_items').upsert(payload, { onConflict: 'id' });
+
+        // Resilience: If foreign key violation still occurs on category_id, retry with category_id = null
+        if (itemError && (itemError.code === '23503' || itemError.message?.includes('foreign key'))) {
+          console.warn('[saveMenuItem] FK violation on category_id. Retrying with category_id = null to ensure dish is saved...');
+          payload.category_id = null;
+          const retryRes = await client.from('menu_items').upsert(payload, { onConflict: 'id' });
+          itemError = retryRes.error;
+        }
+
         if (itemError) {
           console.warn('Error saving menu item to Supabase:', itemError.message);
           await indexedDbService.enqueueMutation({
@@ -2366,6 +2472,8 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             payload,
           });
           setPendingSyncCount((c) => c + 1);
+        } else {
+          console.log('[saveMenuItem] Menu item saved successfully to Supabase:', item.id);
         }
       } catch (e) {
         console.warn('Supabase menu item save error:', e);

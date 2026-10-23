@@ -4,8 +4,12 @@ class SoundNotificationService {
   private soundEnabled: boolean = true;
 
   constructor() {
-    const saved = localStorage.getItem('foodfax_sound_enabled');
-    this.soundEnabled = saved !== null ? saved === 'true' : true;
+    try {
+      const saved = localStorage.getItem('foodfax_sound_enabled');
+      this.soundEnabled = saved !== null ? saved === 'true' : true;
+    } catch (_) {
+      this.soundEnabled = true;
+    }
   }
 
   public isEnabled(): boolean {
@@ -14,7 +18,9 @@ class SoundNotificationService {
 
   public setEnabled(enabled: boolean): void {
     this.soundEnabled = enabled;
-    localStorage.setItem('foodfax_sound_enabled', enabled ? 'true' : 'false');
+    try {
+      localStorage.setItem('foodfax_sound_enabled', enabled ? 'true' : 'false');
+    } catch (_) {}
   }
 
   private getAudioContext(): AudioContext {

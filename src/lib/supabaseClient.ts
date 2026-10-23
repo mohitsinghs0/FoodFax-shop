@@ -1,8 +1,19 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Retrieve Supabase URL and Anon Key directly from environment variables
-const supabaseUrl: string = 
-  import.meta.env.VITE_SUPABASE_URL || 'http://127.0.0.1:8000';
+const envSupabaseUrl: string | undefined = import.meta.env.VITE_SUPABASE_URL;
+const isBrowser = typeof window !== 'undefined';
+const isHttps = isBrowser && window.location.protocol === 'https:';
+
+// Permanent Cloudflare tunnel gateway for production / remote access
+const CLOUDFLARE_TUNNEL_URL = 'https://api.foodfax.in';
+const LOCAL_GATEWAY_URL = 'http://127.0.0.1:8000';
+
+// When running on HTTPS (Vercel production), NEVER use http://127.0.0.1:8000 to avoid Mixed Content block!
+let supabaseUrl: string = envSupabaseUrl || (isHttps ? CLOUDFLARE_TUNNEL_URL : LOCAL_GATEWAY_URL);
+if (isHttps && supabaseUrl.startsWith('http://')) {
+  supabaseUrl = CLOUDFLARE_TUNNEL_URL;
+}
 
 const supabaseAnonKey: string = 
   import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzkyNTE3Njk3LCJleHAiOjE5NTAxOTc2OTd9.m-Kkdq0uf2fr0365ulaLFOW-kWdXO35kaZnJSV_oCwo';

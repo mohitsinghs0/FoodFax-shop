@@ -170,10 +170,10 @@ Vercel Dashboard $\rightarrow$ **Settings** $\rightarrow$ **Environment Variable
 
 | Key | Example Value (Production) | Description |
 | :--- | :--- | :--- |
-| `VITE_SUPABASE_URL` | `https://your-project.supabase.co` ya Tunnel URL | Supabase API URL |
+| `VITE_SUPABASE_URL` | `https://api.foodfax.in` | Permanent Cloudflare Tunnel to Mac Mini Gateway |
 | `VITE_SUPABASE_ANON_KEY` | `eyJhbGciOi...` | Supabase Public JWT Anon Key |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_...` | Supabase Publishable Key |
-| `VITE_GOOGLE_MAPS_API_KEY` | `AIzaSyCy...` | Google Maps Platform Key |
+| `VITE_GOOGLE_MAPS_API_KEY` | `AIzaSyCy0KAJ11MUKY9sbjL2OSjawwj9D1IPWZM` | Google Maps Platform Key |
 | `APP_URL` | `https://owner.foodfax.in` | Live production domain |
 | `GEMINI_API_KEY` | *(Optional)* | Google AI Studio Key |
 
@@ -181,7 +181,7 @@ Vercel Dashboard $\rightarrow$ **Settings** $\rightarrow$ **Environment Variable
 > Production client app me **kabhi bhi `SERVICE_ROLE_KEY` add na karein**. Sirf `ANON_KEY` aur `PUBLISHABLE_KEY` hi client side par allow hain.
 
 ### Step 4: SPA Routing (`vercel.json`)
-Vercel par page refresh karne par 404 error na aaye, iske liye repo me [`vercel.json`](vercel.json) configured hai:
+Vercel par page refresh karne par 404 error na aaye aur static asset chunks cleanly load ho sakein, iske liye repo me [`vercel.json`](file:///Users/mohitsingh/Documents/GitHub/FoodFax-shop/vercel.json) configured hai:
 ```json
 {
   "framework": "vite",
@@ -189,7 +189,7 @@ Vercel par page refresh karne par 404 error na aaye, iske liye repo me [`vercel.
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/|manifest\\.json|sw\\.js|favicon\\.ico).*)",
       "destination": "/index.html"
     }
   ]
@@ -199,10 +199,11 @@ Vercel par page refresh karne par 404 error na aaye, iske liye repo me [`vercel.
 ### Step 5: Custom Domain Setup (`owner.foodfax.in`)
 1. Vercel project me **Settings** $\rightarrow$ **Domains** me jayein.
 2. Domain enter karein: `owner.foodfax.in`.
-3. Apne DNS provider (Cloudflare, GoDaddy, Namecheap) me CNAME record add karein:
+3. Cloudflare DNS me CNAME record add karein:
    - **Type**: `CNAME`
    - **Name**: `owner`
-   - **Target**: `cname.vercel-dns.com` (ya Vercel dwara diya gaya value)
+   - **Target**: `cname.vercel-dns.com`
+   - **Proxy status**: `DNS only` (Grey Cloud recommended during initial domain verification)
 4. SSL Certificate automatically verify aur issue ho jayega.
 
 ---

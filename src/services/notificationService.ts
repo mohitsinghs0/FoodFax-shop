@@ -6,8 +6,12 @@ class BrowserNotificationService {
   private permission: NotificationPermission = 'default';
 
   constructor() {
-    const saved = localStorage.getItem('foodfax_push_notifications_enabled');
-    this.enabled = saved !== null ? saved === 'true' : true;
+    try {
+      const saved = localStorage.getItem('foodfax_push_notifications_enabled');
+      this.enabled = saved !== null ? saved === 'true' : true;
+    } catch (_) {
+      this.enabled = true;
+    }
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
       this.permission = Notification.permission;
@@ -24,7 +28,9 @@ class BrowserNotificationService {
 
   public setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    localStorage.setItem('foodfax_push_notifications_enabled', enabled ? 'true' : 'false');
+    try {
+      localStorage.setItem('foodfax_push_notifications_enabled', enabled ? 'true' : 'false');
+    } catch (_) {}
     if (enabled && this.isSupported() && this.permission === 'default') {
       this.requestPermission();
     }

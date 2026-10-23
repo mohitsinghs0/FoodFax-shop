@@ -3,7 +3,7 @@
  */
 
 export function registerServiceWorker(): void {
-  if (typeof window !== 'undefined' && 'serviceWorker' in navigator && process.env.NODE_ENV !== 'test') {
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator && import.meta.env.MODE !== 'test') {
     window.addEventListener('load', () => {
       navigator.serviceWorker
         .register('/sw.js')

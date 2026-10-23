@@ -1,33 +1,26 @@
 /**
- * Foodfax Shop - Offline Service Worker
- * Precaches core app shell and provides network-first with cache fallback
- * for high resiliency during intermittent connectivity.
+ * Foodfax Shop - Resilient Service Worker
+ * Ensures smooth network updates without stale bundle locking.
  */
 
-const CACHE_NAME = 'foodfax-shop-v1';
-const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-];
+const CACHE_NAME = 'foodfax-shop-v3';
 
 self.addEventListener('install', (event) => {
+  // Activate new worker immediately
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_URLS).catch((err) => {
-        console.warn('[SW] Precache issue:', err);
-      });
-    })
-  );
 });
 
 self.addEventListener('activate', (event) => {
+  // Purge all old caches (v1, v2, etc.) to prevent stale index.html or chunk hash mismatch
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
           .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+          .map((name) => {
+            console.log('[SW] Deleting obsolete cache:', name);
+            return caches.delete(name);
+          })
       );
     }).then(() => self.clients.claim())
   );
@@ -36,25 +29,34 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET requests and Supabase realtime websocket / auth post calls
-  if (event.request.method !== 'GET') {
+  // Skip non-GET requests, websockets, and external APIs
+  if (event.request.method !== 'GET' || url.protocol === 'ws:' || url.protocol === 'wss:') {
     return;
   }
 
-  // Skip WebSocket connections and external analytics
-  if (url.protocol === 'ws:' || url.protocol === 'wss:') {
+  // For HTML navigation, always fetch fresh from network to guarantee latest JS bundle references
+  if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(
+      fetch(event.request).catch(async () => {
+        const cached = await caches.match(event.request);
+        return cached || new Response('Offline. Please reconnect to access the latest version.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        });
+      })
+    );
     return;
   }
 
-  // Network-first with cache fallback for page navigation and app shell
+  // Cache static assets (CSS, JS, fonts, images) with network fallback
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
-        // Cache successful local asset responses
         if (
           networkResponse &&
           networkResponse.status === 200 &&
-          (url.origin === self.location.origin || url.hostname.includes('supabase.co') || url.port === '8000')
+          url.origin === self.location.origin &&
+          url.pathname.startsWith('/assets/')
         ) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -64,23 +66,11 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       })
       .catch(async () => {
-        // Offline fallback from Cache
         const cachedResponse = await caches.match(event.request);
         if (cachedResponse) {
           return cachedResponse;
         }
-
-        // If navigating to an HTML page while offline, return cached root
-        if (event.request.headers.get('accept')?.includes('text/html')) {
-          const fallback = await caches.match('/index.html') || await caches.match('/');
-          if (fallback) return fallback;
-        }
-
-        return new Response('Network offline. Cached data is available via IndexedDB.', {
-          status: 503,
-          statusText: 'Service Unavailable (Offline)',
-          headers: new Headers({ 'Content-Type': 'text/plain' }),
-        });
+        return new Response('Offline asset unavailable', { status: 404 });
       })
   );
 });
