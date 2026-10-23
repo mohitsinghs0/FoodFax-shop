@@ -26,6 +26,8 @@ const supabaseAnonKey: string =
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('⚠️ Supabase URL or Anon Key is missing in environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY).');
+} else {
+  console.log('[FoodFax] Supabase client initialized with endpoint:', supabaseUrl);
 }
 
 /**

@@ -316,9 +316,31 @@ export const LoginScreen: React.FC = () => {
 
         {/* Error Feedback */}
         {formError && lockoutSeconds === 0 && (
-          <div className="mb-4 p-3 rounded-[12px] bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{formError}</span>
+          <div className="mb-4 p-3 rounded-[12px] bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{formError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.removeItem('foodfax_active_screen');
+                  if ('caches' in window) {
+                    caches.keys().then((names) => names.forEach((n) => caches.delete(n)));
+                  }
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then((regs) => {
+                      regs.forEach((r) => r.unregister());
+                    });
+                  }
+                } catch (_) {}
+                window.location.reload();
+              }}
+              className="text-[11px] text-orange-400 hover:text-orange-300 underline self-start cursor-pointer transition-colors"
+            >
+              Clear Cache &amp; Reload Fresh App
+            </button>
           </div>
         )}
 

@@ -1206,13 +1206,24 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             password: pass,
           });
           if (!authError && authData?.user) {
+            console.log('[loginWithPhone] Native GoTrue Phone Auth success for candidate:', candidate);
             passwordMatches = true;
             authenticatedUserId = authData.user.id;
             authenticatedUserName = authData.user.user_metadata?.full_name || authenticatedUserName;
             authenticatedEmail = authData.user.email || authenticatedEmail;
             break;
+          } else if (authError) {
+            console.warn(`[loginWithPhone] GoTrue candidate ${candidate} error:`, authError.message);
+            if (authError.message?.includes('Failed to fetch') || authError.message?.includes('NetworkError')) {
+              const netErr = 'Database connection failed. Please hard-refresh (Cmd+Shift+R) or verify internet connection.';
+              setErrorMessage(netErr);
+              setIsLoading(false);
+              return { success: false, error: netErr };
+            }
           }
-        } catch (_) {}
+        } catch (e: any) {
+          console.warn(`[loginWithPhone] GoTrue candidate ${candidate} exception:`, e?.message);
+        }
       }
     }
 
@@ -1234,6 +1245,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             password: pass,
           });
           if (!authError && authData?.user) {
+            console.log('[loginWithPhone] Native GoTrue Email Auth success for candidate:', candidate);
             passwordMatches = true;
             authenticatedUserId = authData.user.id;
             authenticatedUserName = authData.user.user_metadata?.full_name || authenticatedUserName;
@@ -1256,8 +1268,16 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           .select('id, phone, email, full_name, role, password')
           .or(`phone.eq.${cleanPhone},phone.eq.${standardPhone},phone.eq.${last10},phone.ilike.%${last10}%`);
 
-        if (userQueryErr && (userQueryErr.message?.includes('exceed_egress_quota') || (userQueryErr as any).status === 402)) {
-          isQuotaRestricted = true;
+        if (userQueryErr) {
+          console.warn('[loginWithPhone] DB users query error:', userQueryErr.message);
+          if (userQueryErr.message?.includes('exceed_egress_quota') || (userQueryErr as any).status === 402) {
+            isQuotaRestricted = true;
+          } else if (userQueryErr.message?.includes('Failed to fetch') || userQueryErr.message?.includes('NetworkError')) {
+            const netErr = 'Database connection failed. Please hard-refresh (Cmd+Shift+R) to reach the live database.';
+            setErrorMessage(netErr);
+            setIsLoading(false);
+            return { success: false, error: netErr };
+          }
         }
 
         if (dbUsers && dbUsers.length > 0) {
@@ -1272,6 +1292,10 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             .from('shops')
             .select('id, owner_id, name, phone, contact_phone')
             .or(`phone.eq.${cleanPhone},phone.eq.${standardPhone},phone.eq.${last10},phone.ilike.%${last10}%,contact_phone.ilike.%${last10}%`);
+
+          if (shopQueryErr) {
+            console.warn('[loginWithPhone] DB shops query error:', shopQueryErr.message);
+          }
 
           if (dbShops && dbShops.length > 0) {
             foundShop = dbShops.find((s: any) => {
