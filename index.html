@@ -17,34 +17,13 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <script>
-      // Self-healing: Proactively purge stale service workers and obsolete bundle caches
-      (function() {
-        try {
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(regs) {
-              for (var i = 0; i < regs.length; i++) regs[i].unregister();
-            });
-          }
-        } catch (_) {}
-
-        // Global chunk mismatch auto-recovery: reload once from network if a bundle chunk is missing
-        window.addEventListener('error', function(e) {
-          if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
-            if (!sessionStorage.getItem('ff_chunk_reloaded')) {
-              sessionStorage.setItem('ff_chunk_reloaded', '1');
-              if ('caches' in window) {
-                caches.keys().then(function(names) {
-                  Promise.all(names.map(function(n) { return caches.delete(n); })).then(function() {
-                    window.location.reload();
-                  });
-                });
-              } else {
-                window.location.reload();
-              }
-            }
-          }
-        }, true);
-      })();
+      try {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for (var i = 0; i < regs.length; i++) regs[i].unregister();
+          });
+        }
+      } catch (_) {}
     </script>
   </head>
   <body style="background-color: #0B0F19; margin: 0; padding: 0; color: #F8FAFC;">
