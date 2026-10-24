@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabaseClient';
 import { OwnerOrder, OrderStatus } from '../types';
 import { apiCache } from './apiCache';
+import { formatDailyToken } from '../utils/security';
 
 export interface DbOrder {
   id: string;
@@ -73,7 +74,7 @@ export function mapDbOrderToOwnerOrder(o: any): OwnerOrder {
   return {
     id: o.id,
     shopId: o.shop_id,
-    orderNumber: o.token_number || o.order_number || `#FF-${o.id ? o.id.slice(-4).toUpperCase() : '101'}`,
+    orderNumber: formatDailyToken(o.token_number || o.order_number, o.id),
     customerName: o.customer_name || 'Walk-in Customer',
     customerPhone: o.customer_phone || '',
     orderType,
@@ -201,10 +202,17 @@ export const orderService = {
     apiCache.invalidate('orders');
     apiCache.invalidate(`order_detail_${orderId}`);
 
-    const { error } = await supabase
+    let query = supabase
       .from('orders')
       .update(updates)
       .eq('id', orderId);
+
+    // Enforce tenant boundary: Merchant can only update orders belonging to their own shop
+    if (meta?.shopId) {
+      query = query.eq('shop_id', meta.shopId);
+    }
+
+    const { error } = await query;
 
     if (error) {
       console.error('[orderService.updateOrderStatus] Error:', error.message);

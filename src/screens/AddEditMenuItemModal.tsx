@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOwnerApp } from '../context/OwnerAppContext';
 import { MenuItem, DEFAULT_MENU_CATEGORIES } from '../types';
+import { validateMenuItemInput } from '../utils/security';
 import { 
   X, 
   Check, 
@@ -173,11 +174,21 @@ export const AddEditMenuItemModal: React.FC<AddEditMenuItemModalProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
 
+    const validation = validateMenuItemInput({
+      name: name.trim(),
+      price: parseFloat(price) || 0,
+    });
+
+    if (!validation.valid) {
+      alert(validation.error || 'Please enter a valid dish name and price.');
+      return;
+    }
+
     await saveMenuItem({
       id: itemToEdit?.id,
-      name: name.trim(),
+      name: validation.sanitizedName,
       categoryId: categoryId || undefined,
-      price: parseFloat(price) || 0,
+      price: validation.sanitizedPrice,
       description: description.trim(),
       imageUrl: imageUrl.trim() || undefined,
       isVeg,

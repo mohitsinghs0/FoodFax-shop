@@ -290,13 +290,13 @@ export const OrderDetailsModal: React.FC = () => {
                       updateOrderStatus(order.id, 'cancelled', 'Rejected by store');
                       setSelectedOrderId(null);
                     }}
-                    className="flex-1 py-3 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/10 text-xs font-bold transition"
+                    className="flex-1 min-h-[48px] py-3 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/10 text-sm font-bold transition flex items-center justify-center cursor-pointer active:scale-95"
                   >
                     Reject Order
                   </button>
                   <button
                     onClick={() => updateOrderStatus(order.id, 'accepted')}
-                    className="flex-2 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-lg shadow-orange-950 transition"
+                    className="flex-2 min-h-[48px] py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold shadow-lg shadow-orange-950 transition flex items-center justify-center cursor-pointer active:scale-95"
                   >
                     Accept Order
                   </button>
@@ -306,9 +306,9 @@ export const OrderDetailsModal: React.FC = () => {
               {order.status === 'accepted' && (
                 <button
                   onClick={() => updateOrderStatus(order.id, 'preparing')}
-                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-950 transition"
+                  className="w-full min-h-[48px] py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-950 transition cursor-pointer active:scale-95"
                 >
-                  <CookingPot className="w-4 h-4" />
+                  <CookingPot className="w-5 h-5" />
                   <span>Send to Kitchen (Start Cooking)</span>
                 </button>
               )}
@@ -316,9 +316,9 @@ export const OrderDetailsModal: React.FC = () => {
               {order.status === 'preparing' && (
                 <button
                   onClick={() => updateOrderStatus(order.id, 'ready')}
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950 transition"
+                  className="w-full min-h-[48px] py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950 transition cursor-pointer active:scale-95"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
+                  <CheckCircle2 className="w-5 h-5" />
                   <span>Mark Food Ready for Pickup / Delivery</span>
                 </button>
               )}
@@ -329,7 +329,7 @@ export const OrderDetailsModal: React.FC = () => {
                     updateOrderStatus(order.id, 'completed');
                     setSelectedOrderId(null);
                   }}
-                  className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-lg shadow-teal-950 transition"
+                  className="w-full min-h-[48px] py-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold shadow-lg shadow-teal-950 transition cursor-pointer active:scale-95 flex items-center justify-center"
                 >
                   Mark Handed Over & Completed
                 </button>

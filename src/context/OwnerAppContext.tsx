@@ -23,6 +23,13 @@ import {
   sanitizeBrowserUrlTampering 
 } from '../services/securityService';
 import { authSecurityService } from '../services/authSecurityService';
+import { 
+  formatDailyToken, 
+  validateOrderStatusTransition, 
+  validateMerchantTenantAccess,
+  validateMenuItemInput,
+  sanitizeInput
+} from '../utils/security';
 
 interface OwnerAppContextType {
   activeScreen: ActiveScreen;
@@ -130,7 +137,7 @@ export function mapDbOrderToOwnerOrder(o: any): OwnerOrder {
   return {
     id: o.id,
     shopId: o.shop_id,
-    orderNumber: o.token_number || o.order_number || `#FF-${o.id ? o.id.slice(-4).toUpperCase() : '101'}`,
+    orderNumber: formatDailyToken(o.token_number || o.order_number, o.id),
     customerName: o.customer_name || 'Walk-in Customer',
     customerPhone: o.customer_phone || '',
     orderType,
@@ -2329,98 +2336,187 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     if (isRush) soundService.playSuccessTone();
   };
 
-  // Update Order Status in 'public.orders' table
+  // Update Order Status in 'public.orders' table with strict state machine and tenant isolation
   const updateOrderStatus = async (
     orderId: string,
     newStatus: OrderStatus,
     reason?: string
   ): Promise<boolean> => {
+    const targetOrder = orders.find((o) => o.id === orderId);
+
+    // 1. Strict Tenant Boundary Isolation: Merchant can only modify orders for their own shop
+    if (targetOrder && shop?.id) {
+      const tenantCheck = validateMerchantTenantAccess(shop.id, targetOrder.shopId);
+      if (!tenantCheck.allowed) {
+        console.error('[Tenant Isolation Violation]', tenantCheck.error);
+        setErrorMessage(tenantCheck.error || 'Access denied: Cannot modify orders for another shop.');
+        return false;
+      }
+
+      // 2. Strict State Machine Validation: Prevent illegal jumps (e.g. pending directly to completed)
+      const transitionCheck = validateOrderStatusTransition(targetOrder.status, newStatus);
+      if (!transitionCheck.allowed) {
+        console.warn('[Invalid Order State Transition]', transitionCheck.error);
+        setErrorMessage(transitionCheck.error || 'Invalid order status transition.');
+        return false;
+      }
+    }
+
+    const updatedOrder: OwnerOrder | undefined = targetOrder
+      ? {
+          ...targetOrder,
+          status: newStatus,
+          cancellationReason: reason || targetOrder.cancellationReason,
+          updatedAt: new Date().toISOString(),
+        }
+      : undefined;
+
+    // Optimistic UI state update
     setOrders((prev) =>
       prev.map((o) =>
         o.id === orderId
-          ? {
+          ? (updatedOrder || {
               ...o,
               status: newStatus,
               cancellationReason: reason || o.cancellationReason,
               updatedAt: new Date().toISOString(),
-            }
+            })
           : o
       )
     );
 
-    const client = getSupabaseClient();
-    if (client) {
-      try {
-        // DB constraint requires uppercase order_status
-        const dbStatus = newStatus.toUpperCase();
-        const payload: any = {
-          order_status: dbStatus,
-          updated_at: new Date().toISOString(),
-        };
+    // Circuit-breaker: Persist updated state locally in IndexedDB so stall vendor can prepare offline
+    if (updatedOrder) {
+      indexedDbService.saveOrderOffline(updatedOrder).catch(() => {});
+    }
 
-        if (newStatus === 'completed') {
-          payload.completed_at = new Date().toISOString();
-          payload.payment_status = 'PAID';
-        } else if (newStatus === 'ready') {
-          payload.ready_at = new Date().toISOString();
-        } else if (newStatus === 'cancelled') {
-          payload.cancelled_at = new Date().toISOString();
-          payload.cancellation_reason = reason || 'Cancelled by kitchen';
+    const client = getSupabaseClient();
+    const dbStatus = newStatus.toUpperCase();
+    const payload: any = {
+      order_status: dbStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (newStatus === 'completed') {
+      payload.completed_at = new Date().toISOString();
+      payload.payment_status = 'PAID';
+    } else if (newStatus === 'ready') {
+      payload.ready_at = new Date().toISOString();
+    } else if (newStatus === 'cancelled') {
+      payload.cancelled_at = new Date().toISOString();
+      payload.cancellation_reason = reason || 'Cancelled by kitchen';
+    }
+
+    if (client && navigator.onLine) {
+      try {
+        let query = client.from('orders').update(payload).eq('id', orderId);
+        // Tenant scope check at database query level
+        if (shop?.id) {
+          query = query.eq('shop_id', shop.id);
         }
 
-        const { error: updateError } = await client.from('orders').update(payload).eq('id', orderId);
+        const { error: updateError } = await query;
         if (updateError) {
           console.warn('Error updating order status in Supabase:', updateError.message);
-        }
-
-        // Record in 'public.order_status_history'
-        try {
-          await client.from('order_status_history').insert({
-            id: `osh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            order_id: orderId,
-            new_status: dbStatus,
-            changed_by: ownerProfile?.fullName || 'Owner',
-            note: reason || `Order updated to ${dbStatus}`,
-            created_at: new Date().toISOString(),
+          await indexedDbService.enqueueMutation({
+            action: 'UPDATE',
+            table: 'orders',
+            recordId: orderId,
+            payload,
           });
-        } catch (_) {}
-
-        // Insert alert in 'public.notifications'
-        if (shop && (newStatus === 'ready' || newStatus === 'cancelled')) {
+          setPendingSyncCount((c) => c + 1);
+        } else {
+          // Record in 'public.order_status_history'
           try {
-            await client.from('notifications').insert({
-              id: `notif_${Date.now()}`,
-              shop_id: shop.id,
+            await client.from('order_status_history').insert({
+              id: `osh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
               order_id: orderId,
-              title: newStatus === 'ready' ? 'Order is Ready!' : 'Order Cancelled',
-              message: `Order #${orderId.slice(-4)} is ${newStatus}`,
-              type: newStatus === 'ready' ? 'ORDER_READY' : 'ORDER_CANCELLED',
-              is_read: false,
+              new_status: dbStatus,
+              changed_by: ownerProfile?.fullName || 'Owner',
+              note: reason || `Order updated to ${dbStatus}`,
               created_at: new Date().toISOString(),
             });
           } catch (_) {}
+
+          // Insert alert in 'public.notifications'
+          if (shop && (newStatus === 'ready' || newStatus === 'cancelled')) {
+            try {
+              await client.from('notifications').insert({
+                id: `notif_${Date.now()}`,
+                shop_id: shop.id,
+                order_id: orderId,
+                title: newStatus === 'ready' ? 'Order is Ready!' : 'Order Cancelled',
+                message: `Order #${orderId.slice(-4)} is ${newStatus}`,
+                type: newStatus === 'ready' ? 'ORDER_READY' : 'ORDER_CANCELLED',
+                is_read: false,
+                created_at: new Date().toISOString(),
+              });
+            } catch (_) {}
+          }
         }
       } catch (e) {
-        console.warn('Failed to update order status in Supabase:', e);
+        console.warn('Failed to update order status in Supabase, enqueuing offline sync:', e);
+        await indexedDbService.enqueueMutation({
+          action: 'UPDATE',
+          table: 'orders',
+          recordId: orderId,
+          payload,
+        });
+        setPendingSyncCount((c) => c + 1);
       }
+    } else {
+      // Offline fallback: enqueue mutation to background sync
+      await indexedDbService.enqueueMutation({
+        action: 'UPDATE',
+        table: 'orders',
+        recordId: orderId,
+        payload,
+      });
+      setPendingSyncCount((c) => c + 1);
     }
 
     soundService.playSuccessTone();
     return true;
   };
 
-  // Save Menu Item in Supabase 'public.menu_items' table
+  // Save Menu Item in Supabase 'public.menu_items' table with strict tenant isolation and input validation
   const saveMenuItem = async (itemData: Partial<MenuItem>): Promise<boolean> => {
     if (!shop) return false;
+
+    // Validate and sanitize input: dish name and non-negative price
+    const inputValidation = validateMenuItemInput({
+      name: itemData.name || '',
+      price: itemData.price ?? 0,
+    });
+
+    if (!inputValidation.valid) {
+      console.warn('[saveMenuItem] Validation failed:', inputValidation.error);
+      setErrorMessage(inputValidation.error || 'Invalid menu item data');
+      return false;
+    }
+
+    // Verify tenant ownership if editing existing item
+    if (itemData.id) {
+      const existing = menuItems.find((i) => i.id === itemData.id);
+      if (existing && existing.shopId && existing.shopId !== shop.id) {
+        console.error('Tenant violation: Cannot edit menu item of another shop');
+        setErrorMessage('Access denied: Cannot edit menu item from another shop.');
+        return false;
+      }
+    }
+
+    const sanitizedName = inputValidation.sanitizedName;
+    const sanitizedPrice = inputValidation.sanitizedPrice;
+    const sanitizedDescription = itemData.description ? sanitizeInput(itemData.description) : undefined;
 
     const isEdit = Boolean(itemData.id);
     const item: MenuItem = {
       id: itemData.id || 'item_' + Math.random().toString(36).substring(2, 10),
       shopId: shop.id,
       categoryId: itemData.categoryId || undefined,
-      name: itemData.name || '',
-      description: itemData.description,
-      price: itemData.price || 0,
+      name: sanitizedName,
+      description: sanitizedDescription,
+      price: sanitizedPrice,
       isVeg: itemData.isVeg ?? true,
       isAvailable: itemData.isAvailable ?? true,
       preparationTimeMinutes: itemData.preparationTimeMinutes || 10,
@@ -2562,8 +2658,15 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     return true;
   };
 
-  // Delete Menu Item from 'public.menu_items'
+  // Delete Menu Item from 'public.menu_items' with tenant boundary check
   const deleteMenuItem = async (id: string): Promise<boolean> => {
+    // Prevent cross-tenant deletion
+    const item = menuItems.find((i) => i.id === id);
+    if (item && item.shopId && shop?.id && item.shopId !== shop.id) {
+      console.error('Tenant violation: Cannot delete menu item belonging to another shop');
+      return false;
+    }
+
     // 1. Optimistic removal from state immediately
     setMenuItems((prev) => prev.filter((i) => i.id !== id));
 
@@ -2574,12 +2677,20 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const client = getSupabaseClient();
     if (client && navigator.onLine) {
       try {
-        const { error } = await client.from('menu_items').delete().eq('id', id);
+        let deleteQuery = client.from('menu_items').delete().eq('id', id);
+        if (shop?.id) {
+          deleteQuery = deleteQuery.eq('shop_id', shop.id);
+        }
+        const { error } = await deleteQuery;
         if (error) {
           console.warn('Supabase menu item delete error:', error.message);
           // If foreign key constraint (item ordered in past orders), soft-delete
           if (error.code === '23503' || error.message?.includes('foreign key')) {
-            await client.from('menu_items').update({ is_active: false, is_available: false }).eq('id', id);
+            let softQuery = client.from('menu_items').update({ is_active: false, is_available: false }).eq('id', id);
+            if (shop?.id) {
+              softQuery = softQuery.eq('shop_id', shop.id);
+            }
+            await softQuery;
           } else {
             await indexedDbService.enqueueMutation({
               action: 'DELETE',
@@ -2609,12 +2720,18 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     return true;
   };
 
-  // Toggle Item Availability in 'public.menu_items'
+  // Toggle Item Availability in 'public.menu_items' scoped to shop_id
   const toggleItemAvailability = async (id: string, isAvailable: boolean) => {
+    // Tenant boundary check
+    const item = menuItems.find((i) => i.id === id);
+    if (item && item.shopId && shop?.id && item.shopId !== shop.id) {
+      console.error('Tenant violation: Cannot toggle menu item belonging to another shop');
+      return;
+    }
+
     setMenuItems((prev) => prev.map((i) => (i.id === id ? { ...i, isAvailable } : i)));
     apiCache.invalidate('menu_items');
 
-    const item = menuItems.find((i) => i.id === id);
     if (item) {
       indexedDbService.saveMenuItemOffline({ ...item, isAvailable });
     }
@@ -2622,10 +2739,14 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     const client = getSupabaseClient();
     if (client && navigator.onLine) {
       try {
-        await client
+        let updateQuery = client
           .from('menu_items')
           .update({ is_available: isAvailable, updated_at: new Date().toISOString() })
           .eq('id', id);
+        if (shop?.id) {
+          updateQuery = updateQuery.eq('shop_id', shop.id);
+        }
+        await updateQuery;
       } catch (e) {
         console.warn('Supabase toggle item error:', e);
         await indexedDbService.enqueueMutation({
@@ -2770,13 +2891,18 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // Assign Tag to Menu Item
   const assignItemTag = async (itemId: string, tag: string | undefined): Promise<boolean> => {
+    const item = menuItems.find((i) => i.id === itemId);
+    if (item && item.shopId && shop?.id && item.shopId !== shop.id) {
+      console.error('Tenant violation: Cannot assign tag to another shop menu item');
+      return false;
+    }
+
     const cleanTag = tag && tag !== 'None' ? tag.trim() : undefined;
     
     // Optimistic update
     setMenuItems((prev) => prev.map((item) => (item.id === itemId ? { ...item, tag: cleanTag } : item)));
     apiCache.invalidate('menu_items');
 
-    const item = menuItems.find((i) => i.id === itemId);
     if (item) {
       indexedDbService.saveMenuItemOffline({ ...item, tag: cleanTag });
     }
@@ -2790,7 +2916,11 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     if (client && navigator.onLine) {
       try {
-        await client.from('menu_items').update(payload).eq('id', itemId);
+        let updateQuery = client.from('menu_items').update(payload).eq('id', itemId);
+        if (shop?.id) {
+          updateQuery = updateQuery.eq('shop_id', shop.id);
+        }
+        await updateQuery;
       } catch (e) {
         console.warn('Supabase assign tag error:', e);
         await indexedDbService.enqueueMutation({
@@ -2815,11 +2945,16 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // Assign Category to Menu Item
   const assignItemCategory = async (itemId: string, categoryId: string | undefined): Promise<boolean> => {
+    const item = menuItems.find((i) => i.id === itemId);
+    if (item && item.shopId && shop?.id && item.shopId !== shop.id) {
+      console.error('Tenant violation: Cannot assign category to another shop menu item');
+      return false;
+    }
+
     // Optimistic update
     setMenuItems((prev) => prev.map((item) => (item.id === itemId ? { ...item, categoryId } : item)));
     apiCache.invalidate('menu_items');
 
-    const item = menuItems.find((i) => i.id === itemId);
     if (item) {
       indexedDbService.saveMenuItemOffline({ ...item, categoryId });
     }
@@ -2832,7 +2967,11 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     if (client && navigator.onLine) {
       try {
-        await client.from('menu_items').update(payload).eq('id', itemId);
+        let updateQuery = client.from('menu_items').update(payload).eq('id', itemId);
+        if (shop?.id) {
+          updateQuery = updateQuery.eq('shop_id', shop.id);
+        }
+        await updateQuery;
       } catch (e) {
         console.warn('Supabase assign category error:', e);
         await indexedDbService.enqueueMutation({

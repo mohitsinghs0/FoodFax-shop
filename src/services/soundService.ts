@@ -10,6 +10,19 @@ class SoundNotificationService {
     } catch (_) {
       this.soundEnabled = true;
     }
+
+    // Auto-unlock audio context on user interaction (browser autoplay policy fallback)
+    if (typeof window !== 'undefined') {
+      const autoUnlock = () => {
+        this.unlockAudio();
+        window.removeEventListener('pointerdown', autoUnlock);
+        window.removeEventListener('keydown', autoUnlock);
+        window.removeEventListener('touchstart', autoUnlock);
+      };
+      window.addEventListener('pointerdown', autoUnlock, { passive: true, once: true });
+      window.addEventListener('keydown', autoUnlock, { passive: true, once: true });
+      window.addEventListener('touchstart', autoUnlock, { passive: true, once: true });
+    }
   }
 
   public isEnabled(): boolean {

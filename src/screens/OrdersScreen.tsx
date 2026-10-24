@@ -133,15 +133,21 @@ export const OrdersScreen: React.FC = () => {
     return orders.filter((o) => ['completed', 'cancelled'].includes(o.status));
   }, [orders]);
 
+  // Pending orders count for visual notification badge
+  const pendingOrdersCount = useMemo(
+    () => activeOrders.filter((o) => o.status === 'pending').length,
+    [activeOrders]
+  );
+
   // Status tabs matching KDS workflow with Overdue counter
   const statusTabs = useMemo(() => [
     { id: 'all', label: 'All Active' },
     ...(overdueOrders.length > 0 ? [{ id: 'overdue', label: `⚠️ Overdue (${overdueOrders.length})` }] : []),
-    { id: 'pending', label: 'Pending' },
+    { id: 'pending', label: pendingOrdersCount > 0 ? `Pending (${pendingOrdersCount})` : 'Pending' },
     { id: 'accepted', label: 'Accepted' },
     { id: 'preparing', label: 'Preparing' },
     { id: 'ready', label: 'Ready' },
-  ], [overdueOrders.length]);
+  ], [overdueOrders.length, pendingOrdersCount]);
 
   // Filtered orders based on search & tab
   const displayedOrders = useMemo(() => {
@@ -488,15 +494,20 @@ export const OrdersScreen: React.FC = () => {
           <div className="flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-[#23304A]/60 pt-1 pb-2">
             {statusTabs.map((tab) => {
               const isSelected = activeTab === tab.id;
+              const isPendingTab = tab.id === 'pending';
+              const hasPendingBadge = isPendingTab && pendingOrdersCount > 0;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`text-[13px] font-bold pb-1 whitespace-nowrap transition relative ${
+                  className={`text-[13px] font-bold pb-1 whitespace-nowrap transition relative flex items-center gap-1.5 cursor-pointer ${
                     isSelected ? 'text-[#F97316]' : 'text-[#94A3B8] hover:text-white'
                   }`}
                 >
                   <span>{tab.label}</span>
+                  {hasPendingBadge && (
+                    <span className="w-2 h-2 rounded-full bg-orange-500 animate-ping inline-block" />
+                  )}
                   {isSelected && (
                     <div className="absolute -bottom-2 left-0 right-0 h-0.5 bg-[#F97316] rounded-full" />
                   )}
@@ -671,7 +682,7 @@ export const OrdersScreen: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Action Buttons */}
+                  {/* Action Buttons (Outdoor High-Legibility, Min 48px Tap Target) */}
                   <div className="flex items-center gap-2 pt-1">
                     {order.status === 'pending' && (
                       <>
@@ -680,7 +691,7 @@ export const OrdersScreen: React.FC = () => {
                             e.stopPropagation();
                             updateOrderStatus(order.id, 'accepted');
                           }}
-                          className="flex-1 py-2 rounded-xl bg-[#F97316] hover:bg-[#EA580C] text-white text-xs font-bold transition cursor-pointer"
+                          className="flex-1 min-h-[48px] px-3 py-2.5 rounded-xl bg-[#F97316] hover:bg-[#EA580C] active:scale-95 text-white text-sm font-bold shadow-md shadow-orange-950/30 transition cursor-pointer flex items-center justify-center"
                         >
                           Accept Order
                         </button>
@@ -689,7 +700,7 @@ export const OrdersScreen: React.FC = () => {
                             e.stopPropagation();
                             updateOrderStatus(order.id, 'cancelled', 'Busy');
                           }}
-                          className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold transition cursor-pointer"
+                          className="min-h-[48px] px-4 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 active:scale-95 border border-red-500/40 text-red-300 text-sm font-bold transition cursor-pointer flex items-center justify-center"
                         >
                           Reject
                         </button>
@@ -702,10 +713,10 @@ export const OrdersScreen: React.FC = () => {
                           e.stopPropagation();
                           updateOrderStatus(order.id, 'preparing');
                         }}
-                        className={`w-full py-2 rounded-xl text-white text-xs font-bold transition cursor-pointer ${
+                        className={`w-full min-h-[48px] py-2.5 rounded-xl text-white text-sm font-bold active:scale-95 transition cursor-pointer flex items-center justify-center ${
                           prep.isOverdue
                             ? 'bg-red-600 hover:bg-red-500 shadow-lg shadow-red-950/40 animate-pulse'
-                            : 'bg-blue-600 hover:bg-blue-500'
+                            : 'bg-blue-600 hover:bg-blue-500 shadow-md shadow-blue-950/30'
                         }`}
                       >
                         {prep.isOverdue ? '⚠️ Overdue - Start Cooking Now!' : 'Start Cooking'}
@@ -718,15 +729,15 @@ export const OrdersScreen: React.FC = () => {
                           e.stopPropagation();
                           updateOrderStatus(order.id, 'ready');
                         }}
-                        className={`w-full py-2 rounded-xl text-white text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        className={`w-full min-h-[48px] py-2.5 rounded-xl text-white text-sm font-black active:scale-95 transition cursor-pointer flex items-center justify-center gap-2 ${
                           prep.isOverdue
                             ? 'bg-gradient-to-r from-red-600 via-orange-600 to-emerald-600 hover:brightness-110 shadow-lg shadow-red-950/40'
-                            : 'bg-emerald-600 hover:bg-emerald-500'
+                            : 'bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-950/30'
                         }`}
                       >
                         {prep.isOverdue ? (
                           <>
-                            <Flame className="w-3.5 h-3.5" />
+                            <Flame className="w-4 h-4" />
                             <span>Expedite & Mark Ready</span>
                           </>
                         ) : (
@@ -741,7 +752,7 @@ export const OrdersScreen: React.FC = () => {
                           e.stopPropagation();
                           updateOrderStatus(order.id, 'completed');
                         }}
-                        className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer"
+                        className="w-full min-h-[48px] py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-bold shadow-md shadow-emerald-950/30 transition cursor-pointer flex items-center justify-center"
                       >
                         Handover & Complete
                       </button>
@@ -752,10 +763,10 @@ export const OrdersScreen: React.FC = () => {
                         e.stopPropagation();
                         setSelectedOrderId(order.id);
                       }}
-                      className="p-2 rounded-xl bg-[#0B0F19] text-[#94A3B8] hover:text-white cursor-pointer"
+                      className="min-h-[48px] min-w-[48px] p-2.5 rounded-xl bg-[#0B0F19] text-[#94A3B8] hover:text-white cursor-pointer flex items-center justify-center active:scale-95"
                       title="View details"
                     >
-                      <ChevronRight className="w-4 h-4" />
+                      <ChevronRight className="w-5 h-5" />
                     </button>
                   </div>
                 </div>

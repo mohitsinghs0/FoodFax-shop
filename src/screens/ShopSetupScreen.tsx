@@ -3,6 +3,7 @@ import { useOwnerApp } from '../context/OwnerAppContext';
 import { ShopLocationPickerModal } from '../components/ShopLocationPickerModal';
 import { soundService } from '../services/soundService';
 import { storageService } from '../services/storageService';
+import { validateKycFile } from '../utils/security';
 import { 
   Store, 
   MapPin, 
@@ -203,8 +204,9 @@ export const ShopSetupScreen: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      triggerFieldAlert(fieldId, 'File size exceeds 10MB limit. Please upload a smaller file.', 2);
+    const validation = validateKycFile(file);
+    if (!validation.valid) {
+      triggerFieldAlert(fieldId, validation.error || 'Invalid file format or size. Only PDF, JPG, and PNG up to 5MB are allowed.', 2);
       return;
     }
 
