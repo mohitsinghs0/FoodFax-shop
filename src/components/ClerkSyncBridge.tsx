@@ -31,3 +31,4 @@ const ClerkSyncInner: React.FC = () => {
 
   return null;
 };
+
