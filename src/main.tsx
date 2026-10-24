@@ -4,6 +4,7 @@ import App from './App.tsx';
 import './index.css';
 import { registerServiceWorker } from './serviceWorkerRegistration.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
+import { ClerkAuthProvider } from './lib/clerkClient.tsx';
 
 // Auto-reload on dynamic module chunk mismatch (e.g. following a new Vercel deployment)
 if (typeof window !== 'undefined') {
@@ -18,7 +19,9 @@ registerServiceWorker();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <ClerkAuthProvider>
+        <App />
+      </ClerkAuthProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

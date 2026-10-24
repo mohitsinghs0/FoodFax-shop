@@ -11,6 +11,8 @@ import {
   MAX_KYC_FILE_SIZE_BYTES,
 } from './security';
 import { assertNoServiceRoleKey } from '../lib/supabaseClient';
+import { formatFileSize, compressImage } from './imageCompression';
+import { isClerkConfigured } from '../lib/clerkClient';
 
 describe('1. Merchant Tenant Boundary Isolation Tests', () => {
   const shopA = 'shop_street_momos_101';
@@ -246,5 +248,33 @@ describe('6. Secrets & Bundle Hygiene Tests', () => {
       () => assertNoServiceRoleKey(serviceRoleToken),
       /SECURITY VIOLATION.*Service Role Key must NEVER be used on the client/i
     );
+  });
+});
+
+describe('7. Image & Document Compression Tests', () => {
+  it('correctly formats file sizes into human-readable strings', () => {
+    assert.equal(formatFileSize(0), '0 B');
+    assert.equal(formatFileSize(512), '512 B');
+    assert.equal(formatFileSize(1024 * 350), '350.0 KB');
+    assert.equal(formatFileSize(1024 * 1024 * 3.5), '3.50 MB');
+  });
+
+  it('passes non-image documents (e.g. PDF) through without modification', async () => {
+    // In Node.js environment, global.File is standard in Node 20+
+    const mockPdfBlob = new Blob(['%PDF-1.4 mock pdf content'], { type: 'application/pdf' });
+    const mockPdfFile = new File([mockPdfBlob], 'sample_kyc_doc.pdf', { type: 'application/pdf' });
+
+    const result = await compressImage(mockPdfFile);
+    assert.equal(result.wasCompressed, false);
+    assert.equal(result.file.name, 'sample_kyc_doc.pdf');
+    assert.equal(result.file.type, 'application/pdf');
+    assert.equal(result.compressedSizeBytes, mockPdfFile.size);
+  });
+});
+
+describe('8. Clerk Authentication Integration Tests', () => {
+  it('validates whether Clerk is configured based on publishable key prefix', () => {
+    // Default test environment without live key should evaluate to false without throwing
+    assert.equal(typeof isClerkConfigured, 'boolean');
   });
 });

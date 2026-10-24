@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import { validateKycFile } from '../utils/security';
+import { compressImage } from '../utils/imageCompression';
 
 export interface UploadResult {
   url: string;
@@ -24,8 +25,23 @@ export const storageService = {
    * 4. Short-lived signed URL generation (private storage)
    */
   async uploadKycDoc(file: File, shopId: string, docType: string): Promise<UploadResult> {
+    // 0. Auto-compress camera photos/images (reduces 10MB down to ~300-600KB, preserving fine document text)
+    let processedFile = file;
+    if (file.type.startsWith('image/')) {
+      try {
+        const compression = await compressImage(file, {
+          maxWidth: 1920,
+          maxHeight: 1920,
+          quality: 0.82,
+        });
+        processedFile = compression.file;
+      } catch (e) {
+        console.warn('[storageService] Image compression fallback to original:', e);
+      }
+    }
+
     // 1. Strict validation check
-    const validation = validateKycFile(file);
+    const validation = validateKycFile(processedFile);
     if (!validation.valid) {
       return {
         url: '',
@@ -35,8 +51,8 @@ export const storageService = {
     }
 
     try {
-      const extMatch = file.name.match(/\.[0-9a-z]+$/i);
-      const ext = extMatch ? extMatch[0].replace('.', '').toLowerCase() : (file.type.includes('pdf') ? 'pdf' : 'jpg');
+      const extMatch = processedFile.name.match(/\.[0-9a-z]+$/i);
+      const ext = extMatch ? extMatch[0].replace('.', '').toLowerCase() : (processedFile.type.includes('pdf') ? 'pdf' : 'jpg');
       const cleanFileName = `${shopId}/${docType}_${Date.now()}.${ext}`;
 
       // Buckets to try in order of strictness
@@ -45,7 +61,7 @@ export const storageService = {
       for (const bucket of kycBuckets) {
         const { data, error } = await supabase.storage
           .from(bucket)
-          .upload(cleanFileName, file, {
+          .upload(cleanFileName, processedFile, {
             cacheControl: '3600',
             upsert: true,
           });
@@ -111,12 +127,25 @@ export const storageService = {
    */
   async uploadShopAsset(file: File, shopId: string, assetType: 'logo' | 'banner'): Promise<UploadResult> {
     try {
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      // Auto-compress heavy camera assets
+      let processedFile = file;
+      if (file.type.startsWith('image/')) {
+        try {
+          const compression = await compressImage(file, {
+            maxWidth: assetType === 'banner' ? 1400 : 800,
+            maxHeight: assetType === 'banner' ? 800 : 800,
+            quality: 0.80,
+          });
+          processedFile = compression.file;
+        } catch (_) {}
+      }
+
+      const ext = processedFile.name.split('.').pop()?.toLowerCase() || 'jpg';
       const cleanFileName = `${shopId}/${assetType}_${Date.now()}.${ext}`;
 
       const { data, error } = await supabase.storage
         .from('shop-assets')
-        .upload(cleanFileName, file, {
+        .upload(cleanFileName, processedFile, {
           cacheControl: '86400',
           upsert: true,
         });

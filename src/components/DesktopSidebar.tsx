@@ -19,6 +19,7 @@ import {
   Sliders
 } from 'lucide-react';
 import { soundService } from '../services/soundService';
+import { ClerkUserAvatar } from '../lib/clerkClient';
 
 interface DesktopSidebarProps {
   onOpenSettings: () => void;
@@ -259,13 +260,16 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
       {/* Bottom User Profile & Sign Out Card */}
       <div className="p-4 border-t border-[#1E293B] bg-[#080C14]">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-white truncate capitalize">
-              {ownerProfile?.fullName || 'Store Owner'}
-            </p>
-            <p className="text-[11px] text-slate-400 truncate">
-              {ownerProfile?.phone || shop.phone || '+91 93214 44297'}
-            </p>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <ClerkUserAvatar />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-white truncate capitalize">
+                {ownerProfile?.fullName || 'Store Owner'}
+              </p>
+              <p className="text-[11px] text-slate-400 truncate">
+                {ownerProfile?.phone || ownerProfile?.email || shop.phone || '+91 93214 44297'}
+              </p>
+            </div>
           </div>
 
           <button

@@ -261,3 +261,4 @@ export function validateMenuItemInput(input: {
     sanitizedPrice: Math.round(numericPrice * 100) / 100, // 2 decimal precision
   };
 }
+

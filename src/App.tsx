@@ -13,6 +13,7 @@ import { ScreenSkeletonFallback } from './components/ScreenSkeletonFallback';
 import { MenuItem, ActiveScreen } from './types';
 import { Zap } from 'lucide-react';
 import { SessionExpiringModal } from './components/SessionExpiringModal';
+import { ClerkSyncBridge } from './components/ClerkSyncBridge';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 
@@ -88,6 +89,7 @@ const MainAppContent: React.FC = () => {
 
   return (
     <MobileFrame>
+      <ClerkSyncBridge />
       {/* Desktop Left Navigation Sidebar (Visible only on lg: screens and up) */}
       {isInternalApp && (
         <DesktopSidebar

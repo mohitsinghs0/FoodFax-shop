@@ -56,6 +56,13 @@ interface OwnerAppContextType {
   pushPermission: NotificationPermission;
   triggerTestPushNotification: () => void;
   loginWithPhone: (phone: string, password: string) => Promise<boolean | { success: boolean; error?: string }>;
+  loginWithClerk: (clerkUser: {
+    id: string;
+    fullName?: string | null;
+    primaryEmailAddress?: { emailAddress: string } | null;
+    primaryPhoneNumber?: { phoneNumber: string } | null;
+    imageUrl?: string | null;
+  }) => Promise<boolean>;
   sendPhoneOtp: (phone: string) => Promise<boolean>;
   verifyPhoneOtp: (phone: string, token: string) => Promise<boolean>;
   registerWithPhone: (data: { phone: string; password: string; fullName: string }) => Promise<boolean | { success: boolean; error?: string }>;
@@ -1433,6 +1440,82 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
     }
 
+    return true;
+  };
+
+  // AUTH: Login or Register via Clerk Authentication (clerk.com)
+  const loginWithClerk = async (clerkUser: {
+    id: string;
+    fullName?: string | null;
+    primaryEmailAddress?: { emailAddress: string } | null;
+    primaryPhoneNumber?: { phoneNumber: string } | null;
+    imageUrl?: string | null;
+  }): Promise<boolean> => {
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    const email = clerkUser.primaryEmailAddress?.emailAddress || '';
+    const phone = clerkUser.primaryPhoneNumber?.phoneNumber || '';
+    const fullName = clerkUser.fullName || 'Restaurant Partner';
+    const userId = clerkUser.id;
+
+    const profile: OwnerProfile = {
+      id: userId,
+      email: email || `${userId}@clerk.foodfax.in`,
+      phone: phone || '',
+      fullName,
+      role: 'owner',
+    };
+
+    setOwnerProfile(profile);
+    try {
+      localStorage.setItem('foodfax_owner_profile', JSON.stringify(profile));
+    } catch (_) {}
+
+    // Check if user already exists in Supabase 'shops'
+    const client = getSupabaseClient();
+    let shopIdToLoad: string | undefined = undefined;
+
+    if (client) {
+      try {
+        const filterParts = [`owner_id.eq.${userId}`];
+        if (email) filterParts.push(`contact_email.eq.${email}`);
+        if (phone) filterParts.push(`contact_phone.eq.${phone}`);
+
+        const { data: existingShop } = await client
+          .from('shops')
+          .select('id, owner_id')
+          .or(filterParts.join(','))
+          .limit(1)
+          .maybeSingle();
+
+        if (existingShop) {
+          shopIdToLoad = existingShop.id;
+        }
+      } catch (e) {
+        console.warn('[loginWithClerk] Error checking existing shop:', e);
+      }
+    }
+
+    const loadedShop = await loadDatabaseData(userId, shopIdToLoad);
+    setIsLoading(false);
+
+    if (!loadedShop || !loadedShop.name?.trim()) {
+      setActiveScreenState('shop_setup');
+    } else {
+      const isApproved = Boolean(
+        loadedShop.is_active === true ||
+        loadedShop.kyc_status === 'approved' ||
+        loadedShop.kycStatus === 'approved'
+      );
+      if (isApproved) {
+        setActiveScreenState('dashboard');
+      } else {
+        setActiveScreenState('kyc_status');
+      }
+    }
+
+    soundService.playSuccessTone();
     return true;
   };
 
@@ -3227,6 +3310,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       pushPermission,
       triggerTestPushNotification,
       loginWithPhone,
+      loginWithClerk,
       sendPhoneOtp,
       verifyPhoneOtp,
       registerWithPhone,
@@ -3290,6 +3374,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
       pushPermission,
       triggerTestPushNotification,
       loginWithPhone,
+      loginWithClerk,
       sendPhoneOtp,
       verifyPhoneOtp,
       registerWithPhone,

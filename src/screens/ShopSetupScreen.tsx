@@ -4,6 +4,7 @@ import { ShopLocationPickerModal } from '../components/ShopLocationPickerModal';
 import { soundService } from '../services/soundService';
 import { storageService } from '../services/storageService';
 import { validateKycFile } from '../utils/security';
+import { compressImage, formatFileSize } from '../utils/imageCompression';
 import { 
   Store, 
   MapPin, 
@@ -204,7 +205,19 @@ export const ShopSetupScreen: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const validation = validateKycFile(file);
+    // Automatic Client-Side Compression for Camera Photos & Images
+    let processedFile = file;
+    if (file.type.startsWith('image/')) {
+      try {
+        const compression = await compressImage(file, { maxWidth: 1920, maxHeight: 1920, quality: 0.82 });
+        processedFile = compression.file;
+        if (compression.wasCompressed) {
+          console.log(`[Document Compression] Reduced from ${formatFileSize(compression.originalSizeBytes)} to ${formatFileSize(compression.compressedSizeBytes)} (${compression.compressionRatio}% saved)`);
+        }
+      } catch (_) {}
+    }
+
+    const validation = validateKycFile(processedFile);
     if (!validation.valid) {
       triggerFieldAlert(fieldId, validation.error || 'Invalid file format or size. Only PDF, JPG, and PNG up to 5MB are allowed.', 2);
       return;
@@ -217,10 +230,10 @@ export const ShopSetupScreen: React.FC = () => {
     // 1. First attempt to upload to Supabase Storage CDN (Zero DB storage, Zero egress bloat)
     try {
       const shopIdentifier = shop?.id || ownerProfile?.id || 'shop_' + Math.random().toString(36).substring(2, 8);
-      const storageRes = await storageService.uploadKycDoc(file, shopIdentifier, docType);
+      const storageRes = await storageService.uploadKycDoc(processedFile, shopIdentifier, docType);
       if (storageRes.isStorageUrl && storageRes.url) {
         setUrl(storageRes.url);
-        setName(file.name);
+        setName(processedFile.name);
         setUploading(false);
         soundService.playSuccessTone();
         return;
@@ -231,7 +244,7 @@ export const ShopSetupScreen: React.FC = () => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
-      if (file.type.startsWith('image/')) {
+      if (processedFile.type.startsWith('image/')) {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');

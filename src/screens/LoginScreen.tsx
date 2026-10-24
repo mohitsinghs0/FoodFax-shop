@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { authSecurityService, PasswordStrength } from '../services/authSecurityService';
 import { loginPasswordSchema, loginOtpSchema } from '../utils/validationSchemas';
+import { SignInButton } from '@clerk/react';
+import { isClerkConfigured } from '../lib/clerkClient';
 
 export const LoginScreen: React.FC = () => {
   const { 
@@ -528,6 +530,45 @@ export const LoginScreen: React.FC = () => {
               )}
             </button>
           </form>
+        )}
+
+        {/* Clerk SSO Authentication Option */}
+        <div className="relative my-5">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-[#23304A]"></div>
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="px-3 bg-[#131B2E] text-[#94A3B8] font-medium">Or continue with</span>
+          </div>
+        </div>
+
+        {isClerkConfigured ? (
+          <SignInButton mode="modal">
+            <button
+              type="button"
+              className="w-full min-h-[46px] rounded-[14px] bg-[#1E293B] hover:bg-[#334155] border border-[#334155] text-white font-bold text-sm flex items-center justify-center gap-2.5 transition active:scale-[0.99] cursor-pointer shadow-sm"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C6.477 2 2 6.477 2 12C2 17.523 6.477 22 12 22C17.523 22 22 17.523 22 12C22 6.477 17.523 2 12 2Z" fill="#6C47FF"/>
+                <path d="M15.5 8.5L8.5 15.5M8.5 8.5L15.5 15.5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              <span>Continue with Clerk SSO</span>
+            </button>
+          </SignInButton>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              alert('To enable Clerk Authentication, add your VITE_CLERK_PUBLISHABLE_KEY from clerk.com to your .env file.');
+            }}
+            className="w-full min-h-[46px] rounded-[14px] bg-[#1E293B] hover:bg-[#334155] border border-[#334155] text-white font-bold text-sm flex items-center justify-center gap-2.5 transition active:scale-[0.99] cursor-pointer shadow-sm"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.477 2 2 6.477 2 12C2 17.523 6.477 22 12 22C17.523 22 22 17.523 22 12C22 6.477 17.523 2 12 2Z" fill="#6C47FF"/>
+              <path d="M15.5 8.5L8.5 15.5M8.5 8.5L15.5 15.5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            <span>Continue with Clerk (Google / SSO)</span>
+          </button>
         )}
 
         {/* Bottom Registration Link */}
