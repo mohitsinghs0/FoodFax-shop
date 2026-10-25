@@ -1228,8 +1228,17 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
             break;
           } else if (authError) {
             console.warn(`[loginWithPhone] GoTrue candidate ${candidate} error:`, authError.message);
-            if (authError.message?.includes('Failed to fetch') || authError.message?.includes('NetworkError')) {
-              const netErr = 'Database connection failed. Please hard-refresh (Cmd+Shift+R) or verify internet connection.';
+            const msg = authError.message || '';
+            const status = (authError as any).status || 0;
+            if (
+              msg.includes('Failed to fetch') ||
+              msg.includes('NetworkError') ||
+              msg.includes('Bad Gateway') ||
+              msg.includes('502') ||
+              msg.includes('503') ||
+              status >= 500
+            ) {
+              const netErr = 'Database connection failed (Server Error / 502 Bad Gateway). Please verify that the backend database is running and reachable.';
               setErrorMessage(netErr);
               setIsLoading(false);
               return { success: false, error: netErr };
@@ -1284,10 +1293,19 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         if (userQueryErr) {
           console.warn('[loginWithPhone] DB users query error:', userQueryErr.message);
-          if (userQueryErr.message?.includes('exceed_egress_quota') || (userQueryErr as any).status === 402) {
+          const msg = userQueryErr.message || '';
+          const status = (userQueryErr as any).status || 0;
+          if (msg.includes('exceed_egress_quota') || status === 402) {
             isQuotaRestricted = true;
-          } else if (userQueryErr.message?.includes('Failed to fetch') || userQueryErr.message?.includes('NetworkError')) {
-            const netErr = 'Database connection failed. Please hard-refresh (Cmd+Shift+R) to reach the live database.';
+          } else if (
+            msg.includes('Failed to fetch') ||
+            msg.includes('NetworkError') ||
+            msg.includes('Bad Gateway') ||
+            msg.includes('502') ||
+            msg.includes('503') ||
+            status >= 500
+          ) {
+            const netErr = 'Database connection failed (Server Error / 502 Bad Gateway). Please verify that the backend database is running.';
             setErrorMessage(netErr);
             setIsLoading(false);
             return { success: false, error: netErr };
@@ -1309,6 +1327,21 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
 
           if (shopQueryErr) {
             console.warn('[loginWithPhone] DB shops query error:', shopQueryErr.message);
+            const sMsg = shopQueryErr.message || '';
+            const sStatus = (shopQueryErr as any).status || 0;
+            if (
+              sMsg.includes('Failed to fetch') ||
+              sMsg.includes('NetworkError') ||
+              sMsg.includes('Bad Gateway') ||
+              sMsg.includes('502') ||
+              sMsg.includes('503') ||
+              sStatus >= 500
+            ) {
+              const netErr = 'Database connection failed (Server Error / 502 Bad Gateway). Please verify that the backend database is running.';
+              setErrorMessage(netErr);
+              setIsLoading(false);
+              return { success: false, error: netErr };
+            }
           }
 
           if (dbShops && dbShops.length > 0) {
@@ -1548,10 +1581,26 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
           .or(`phone.ilike.%${last10}%,email.ilike.%${last10}%`)
           .limit(5);
 
-        if (uErr && (uErr.message.includes('exceed_egress_quota') || (uErr as any).status === 402)) {
-          setErrorMessage('Database Service Restricted: Supabase egress quota exceeded. Please resolve billing in Supabase dashboard.');
-          setIsLoading(false);
-          return false;
+        if (uErr) {
+          const uMsg = uErr.message || '';
+          const uStatus = (uErr as any).status || 0;
+          if (uMsg.includes('exceed_egress_quota') || uStatus === 402) {
+            setErrorMessage('Database Service Restricted: Supabase egress quota exceeded. Please resolve billing in Supabase dashboard.');
+            setIsLoading(false);
+            return false;
+          }
+          if (
+            uMsg.includes('Failed to fetch') ||
+            uMsg.includes('NetworkError') ||
+            uMsg.includes('Bad Gateway') ||
+            uMsg.includes('502') ||
+            uMsg.includes('503') ||
+            uStatus >= 500
+          ) {
+            setErrorMessage('Database connection failed (Server Error / 502 Bad Gateway). Please ensure backend database is running.');
+            setIsLoading(false);
+            return false;
+          }
         }
 
         if (dbUserList && dbUserList.length > 0) {
