@@ -13,7 +13,8 @@
 4. [Test Merchant Credentials (Seeded Data)](#4-test-merchant-credentials-seeded-data)
 5. [Vercel Hosting & Production Deployment](#5-vercel-hosting--production-deployment)
 6. [Available npm Scripts](#6-available-npm-scripts)
-7. [Troubleshooting & Common Issues](#7-troubleshooting--common-issues)
+7. [Android APK Build & Installation Guide (Capacitor)](#7-android-apk-build--installation-guide-capacitor)
+8. [Troubleshooting & Common Issues](#8-troubleshooting--common-issues)
 
 ---
 
@@ -217,10 +218,92 @@ Vercel par page refresh karne par 404 error na aaye aur static asset chunks clea
 | `npm run lint` | Typecheck | `tsc --noEmit` run karta hai bina kisi code compilation ke types verify karne ke liye. |
 | `npm run preview` | Preview Build | Local build (`dist/`) ko simulate aur preview karne ke liye. |
 | `npm run clean` | Clean Artifacts | `dist/` aur temporary server files delete karta hai. |
+| `npm test` | Automated Tests | Node test runner ke through multi-tenant security, order state machine, aur KYC tests execute karta hai. |
+| `npm run cap:sync` | Capacitor Sync | Vite build execute karke web assets ko native Android folder me copy karta hai. |
+| `npm run cap:open` | Android Studio | Native Android project ko Android Studio IDE me launch karta hai. |
+| `npm run cap:build` | Build APK | Full pipeline: Vite Build $\to$ Capacitor Sync $\to$ Gradle debug APK compilation. |
 
 ---
 
-## 7. Troubleshooting & Common Issues
+## 7. Android APK Build & Installation Guide (Capacitor)
+
+FoodFax Shop Dashboard ko Capacitor ke dwara ek fully-functional native Android application (`.apk`) ke roop me package kiya gaya hai. Is se stall owners bina kisi browser bar ke, direct phone app ke roop me order notifications aur kitchen display use kar sakte hain.
+
+### 📍 APK File Locations
+
+1. **Direct Root Folder (Quick Access):**
+   - **Path:** [`foodfax-shop-debug.apk`](foodfax-shop-debug.apk)
+   - **Size:** `~4.9 MB`
+2. **Native Android Gradle Output:**
+   - **Path:** `android/app/build/outputs/apk/debug/app-debug.apk`
+
+---
+
+### ⚙️ Capacitor App Configuration
+
+- **App Name**: `FoodFax Shop`
+- **Application ID / Package**: `in.foodfax.shop`
+- **Web Directory**: `dist`
+- **Config File**: [`capacitor.config.ts`](capacitor.config.ts)
+- **Target Android SDK**: API Level 34 & 36
+- **Gradle Version**: 8.14
+- **Required JDK**: OpenJDK 21 (`/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`)
+
+> [!IMPORTANT]
+> Android Studio ke bundled Canary Java 25 (`class file major version 69`) ko Gradle 8.14 support nahi karta. Isliye APK build karne ke liye hamesha Homebrew ka `openjdk@21` use karein (`JAVA_HOME` set karke).
+
+---
+
+### 📲 Mobile Me Install Karne Ka Tarika
+
+#### Option A: Direct USB Cable / ADB se (Fastest for Developers)
+Agar mobile phone USB Debugging on karke computer se connect hai ya koi Android Emulator running hai:
+```bash
+adb install foodfax-shop-debug.apk
+```
+
+#### Option B: Phone me Send Karke Install Karein (For Stall Owners)
+1. `foodfax-shop-debug.apk` file ko **WhatsApp**, **Telegram**, **Google Drive**, ya **USB** ke through stall owner ke Android mobile me transfer karein.
+2. File Manager me jakar APK file par tap karein.
+3. Agar phone me pehli baar install kar rahe hain, to *"Install Unknown Apps"* permission maange to **"Allow from this source"** enable karein.
+4. **Install** par tap karein aur app open karein.
+
+---
+
+### 🔨 Code Changes Ke Baad New APK Kaise Banayein (Rebuild Guide)
+
+Jab bhi aap React/Vite code me changes karein aur naya APK compile karna ho, ye command chalayein:
+
+```bash
+# 1. OpenJDK 21 ka path export karein
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# 2. Vite build + Capacitor sync + Gradle assembleDebug execute karein
+npm run cap:build
+
+# 3. New compiled APK ko root folder me copy karein
+cp android/app/build/outputs/apk/debug/app-debug.apk foodfax-shop-debug.apk
+```
+
+Ya fir direct Android Studio me open karke Run/Debug karne ke liye:
+```bash
+npm run cap:open
+```
+
+---
+
+### 🚀 Native APK Ke Key Features
+
+1. **Hardware-Accelerated WebView**: Sub-50ms smooth UI rendering bina browser address bar ke.
+2. **High-Contrast Outdoor Stall Theme**: Dhoop aur open-air stalls me clear visibility ke liye high-contrast buttons aur large tap targets ($\ge 48\text{px}$).
+3. **Live Audio Order Buzzer**: Naya order aane par loud notification chime baje ga jo stall environment me aasani se sunai deta hai.
+4. **Client-Side Image & Doc Compression**: Camera se khinche hue 5MB–10MB ke dish photos ya KYC documents upload hone se pehle device par hi auto-compress (~100KB–300KB) ho jate hain, jisse 2G/3G network par bhi upload fail nahi hota.
+5. **Circuit-Breaker Offline Resilience**: Network temporary chale jane par bhi screen crash nahi hoti aur stall owner current active orders dekh sakta hai.
+
+---
+
+## 8. Troubleshooting & Common Issues
 
 ### Issue 1: Vercel par `npm error ERESOLVE could not resolve`
 - **Karan**: React 19 aur Vite/Tailwind plugins ke beech esbuild peer dependency mismatch.
@@ -237,4 +320,12 @@ Vercel par page refresh karne par 404 error na aaye aur static asset chunks clea
 ### Issue 4: Localhost par CORS ya Network Block
 - **Karan**: Docker containers stopped hona ya port 8000 accessible na hona.
 - **Solution**: Terminal me check karein `docker ps` run ho raha hai aur `curl http://127.0.0.1:8000/rest/v1/shops` valid response de raha hai.
+
+### Issue 5: `owner.foodfax.in` par Blank Screen / Vercel par "Proxy Detected" Warning
+- **Karan**: Cloudflare DNS me `owner` CNAME record par Cloudflare Proxy (Orange Cloud 🟠) on hona. Cloudflare ka proxy Vite ke ES Modules ko alter karta hai aur Chrome crash (`Reload this page`) trigger karta hai.
+- **Solution**: Cloudflare Dashboard me jakar `owner` CNAME record ko **DNS Only (Grey Cloud ☁️)** me switch karein.
+
+### Issue 6: Login par 502 Bad Gateway ya Server Offline
+- **Karan**: Mac par Docker Desktop band hona, jisse local Supabase containers stop ho jate hain aur Cloudflare tunnel (`api.foodfax.in`) port 8000 tak nahi pahunch pata.
+- **Solution**: Mac par **Docker Desktop** start karein. Docker start hote hi saare Supabase containers auto-start ho jayenge aur `api.foodfax.in` live ho jayega.
 
