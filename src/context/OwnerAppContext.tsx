@@ -125,19 +125,31 @@ export function mapDbOrderToOwnerOrder(o: any): OwnerOrder {
   const subtotal = Number(o.subtotal ?? o.total ?? 0);
   const total = Number(o.total ?? o.subtotal ?? 0);
 
-  // Map order items from relational join
-  const items = Array.isArray(o.order_items)
-    ? o.order_items.map((oi: any) => ({
-        id: oi.id,
-        orderId: oi.order_id,
-        menuItemId: oi.menu_item_id || oi.id,
-        name: oi.name || 'Menu Item',
-        price: Number(oi.price || 0),
-        quantity: Number(oi.quantity || 1),
-        isVeg: oi.is_veg ?? true,
-        notes: oi.notes || '',
-      }))
-    : [];
+  // Map order items from relational join OR embedded jsonb
+  let items: any[] = [];
+  if (Array.isArray(o.order_items) && o.order_items.length > 0) {
+    items = o.order_items.map((oi: any) => ({
+      id: oi.id,
+      orderId: oi.order_id,
+      menuItemId: oi.menu_item_id || oi.id,
+      name: oi.name || 'Menu Item',
+      price: Number(oi.price || 0),
+      quantity: Number(oi.quantity || 1),
+      isVeg: oi.is_veg ?? true,
+      notes: oi.notes || '',
+    }));
+  } else if (Array.isArray(o.items) && o.items.length > 0) {
+    items = o.items.map((oi: any, idx: number) => ({
+      id: oi.id || `${o.id}-item-${idx}`,
+      orderId: o.id,
+      menuItemId: oi.menuItemId || oi.menu_item_id || oi.id,
+      name: oi.name || 'Menu Item',
+      price: Number(oi.price || 0),
+      quantity: Number(oi.quantity || 1),
+      isVeg: oi.isVeg ?? oi.is_veg ?? true,
+      notes: oi.notes || '',
+    }));
+  }
 
   const prepMin = parseInt(o.estimated_preparation_minutes || '10', 10) || 10;
 
@@ -1069,7 +1081,7 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
               return;
             }
 
-            const orderProjection = 'id, shop_id, order_number, customer_name, customer_phone, order_type, table_number, status, order_status, subtotal, tax, discount, total, total_amount, payment_status, payment_method, cancellation_reason, estimated_prep_minutes, created_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, notes)';
+            const orderProjection = 'id, shop_id, customer_name, customer_phone, token_number, order_type, table_number, payment_method, payment_status, order_status, subtotal, total, items, estimated_preparation_minutes, cancellation_reason, created_at, updated_at, order_items(id, order_id, menu_item_id, name, price, quantity, is_veg, created_at)';
 
             if (payload.eventType === 'INSERT') {
               const { data } = await client
@@ -1112,18 +1124,16 @@ export const OwnerAppProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
   }, [shop?.id, upsertOrderFromRealtime, removeOrderFromRealtime, refreshOrders]);
 
-  // Background Auto-Polling Fallback: Only poll when Realtime is disconnected!
+  // Background Auto-Polling Fallback: Active every 10 seconds to guarantee zero missed orders
   useEffect(() => {
     if (!shop?.id) return;
     const interval = setInterval(() => {
       if (typeof navigator !== 'undefined' && navigator.onLine && typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        // If Realtime WebSocket is connected, skip REST polling to eliminate redundant egress
-        if (realtimeStatus === 'connected') return;
         refreshOrders(shop.id);
       }
-    }, 60000);
+    }, 10000);
     return () => clearInterval(interval);
-  }, [shop?.id, refreshOrders, realtimeStatus]);
+  }, [shop?.id, refreshOrders]);
 
   // Enforce single-shop binding: switchShop is disabled for strict security
   const switchShop = useCallback(
